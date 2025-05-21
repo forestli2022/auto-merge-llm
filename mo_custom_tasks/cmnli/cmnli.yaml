@@ -1,0 +1,17 @@
+tag: cmnli
+task: cmnli
+dataset_path: /home/gsu/workspace/mergebase/other_bench_test/cmnli_public
+#dataset_name: chinese_nli
+output_type: multiple_choice
+training_split: dev
+validation_split: validation
+doc_to_text:  !function util.doc_to_text
+doc_to_target: !function util.process_label
+doc_to_choice: ["矛盾", "无关", "蕴含"]
+#process_results: !function utils.process_results
+metric_list:
+  - metric: acc
+metadata:
+  version: 1.0
+  language: zh
+  task_description: "Chinese natural language inference task to determine the relationship between two sentences"

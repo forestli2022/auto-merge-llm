@@ -1,0 +1,20 @@
+eta: 3 
+n_workers: 2
+n_trials: 500
+random_init_points: 0
+min_budget: 100  # minimum budget per trial
+max_budget: 1000 # maximum budget per trial 1000 
+total_budget: 0
+repeat: 1
+remain_base: True
+layer_granularity: 1
+num_hidden_layers: 40
+fix_layers: 0
+layers: 50
+merging_method: passthrough
+models:
+    - "WizardLMTeam/WizardLM-13B-V1.2"
+    - "vanillaOVO/WizardMath-13B-V1.0"
+    - "layoric/llama-2-13b-code-alpaca"
+
+base_model: "meta-llama/Llama-2-13b-hf"

@@ -1,0 +1,24 @@
+strategy: lfs
+global_params:
+  random_seed: 0
+  cache_dir: ""
+  output_path: ""
+  evaluation:
+    in_memory: true
+    vllm: true
+    enforce_eager: true
+    batch_size: 16
+    torch_dtype: float16
+    #num_fewshot: None
+    #limit: 10  # Limit the number of examples per task (for debug). 
+    device: "cuda"
+    include_path: ""
+    tasks:
+      - task: gsm_plus_mini_custom
+        metric: "exact_match,custom-strict-match"
+     
+strategies:
+  normal_models: !include normal_models.yaml
+  normal_slices: !include normal_slices.yaml
+  lfs: !include lfs.yaml
+  dis: !include dis.yaml

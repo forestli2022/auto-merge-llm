@@ -1,0 +1,36 @@
+eta: 3 
+n_workers: 2
+n_trials: 500
+random_init_points: 0
+min_budget: 100
+max_budget: 1000
+total_budget: 0
+layer_granularity: 10
+filters:
+  - self_attn
+  - mlp
+base_model: "meta-llama/Llama-2-13b-hf"
+models:
+    - "WizardLMTeam/WizardLM-13B-V1.2"
+    - "vanillaOVO/WizardMath-13B-V1.0"
+    - "layoric/llama-2-13b-code-alpaca"
+merging_method: 
+  task_arithmetic:
+    scaling_coefficient: 
+      min: 0.0
+      max: 1.0
+  slerp:
+    slerp_t:
+      min: 0.0
+      max: 1.0
+  ties:
+    param_value_mask_rate:
+      min: 0.0
+      max: 0.99
+    scaling_coefficient:
+      min: 0.0
+      max: 1.0
+  linear: 
+    weights:
+      min: 0.0
+      max: 1.0

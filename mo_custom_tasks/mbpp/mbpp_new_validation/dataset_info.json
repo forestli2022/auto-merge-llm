@@ -1,0 +1,17 @@
+{
+  "builder_name": "json",
+  "config_name": "default",
+  "version": "1.0.0",
+  "splits": {
+    "validation": {
+      "name": "validation",
+      "num_bytes": 169182,
+      "num_examples": 300,
+      "dataset_name": "mbpp_new_validation"
+    }
+  },
+  "download_checksums": {},
+  "download_size": 0,
+  "dataset_size": 169182,
+  "size_in_bytes": 169182
+}

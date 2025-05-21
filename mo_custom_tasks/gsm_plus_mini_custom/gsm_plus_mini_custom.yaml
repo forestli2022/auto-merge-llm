@@ -1,0 +1,50 @@
+tag:
+  - math_word_problems
+task: gsm_plus_mini_custom
+dataset_path: qintongli/GSM-Plus
+output_type: generate_until
+training_split: testmini
+fewshot_split: testmini
+test_split: testmini
+process_docs: !function utils.process_docs
+doc_to_text: "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{{question}}\n\n### Response: Let's think step by step."
+#doc_to_text: "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{{question}}\n\n### Response:"
+doc_to_target: "{{answer.split('### ')[-1].rstrip()}}"
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+    ignore_case: true
+    ignore_punctuation: false
+    regexes_to_ignore:
+      - ","
+      - "\\$"
+      - "(?s).*#### "
+      - "\\.$"
+generation_kwargs:
+  until:
+    - "Q:"
+    - "</s>"
+    - "<|im_end|>"
+  do_sample: false
+  max_gen_toks: 1024 
+repeats: 1
+num_fewshot: 0
+filter_list:
+  - name: "custom-strict-match"
+    filter:
+      - function: "get_answer"
+# filter_list:
+#   - name: "strict-match"
+#     filter:
+#       - function: "regex"
+#         regex_pattern: "The answer is (\\-?[0-9\\.\\,]+)."
+#       - function: "take_first"
+#   - name: "flexible-extract"
+#     filter:
+#       - function: "regex"
+#         group_select: -1
+#         regex_pattern: "(-?[$0-9.,]{2,})|(-?[0-9]+)"
+#       - function: "take_first"
+metadata:
+  version: 3.0

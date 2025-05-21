@@ -1,0 +1,10 @@
+models:
+  - model: "WizardLMTeam/WizardLM-13B-V1.2" 
+  - model: "vanillaOVO/WizardMath-13B-V1.0"
+  - model: "layoric/llama-2-13b-code-alpaca"
+  
+base_model: "meta-llama/Llama-2-13b-hf"  
+merging_method: 
+  passthrough:
+    scale: 
+      - value: 1.0

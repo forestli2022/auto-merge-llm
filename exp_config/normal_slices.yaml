@@ -1,0 +1,21 @@
+slices:
+  - sources:
+    - model: "vanillaOVO/WizardMath-13B-V1.0"
+      layer_range: [0, 8]
+    - model: "WizardLMTeam/WizardLM-13B-V1.2"
+      layer_range: [8, 16]
+    merging_method: 
+      task_arithmetic:
+        scaling_coefficient: 
+            - value: 1.0
+    
+  - sources:
+    - model: "vanillaOVO/WizardMath-13B-V1.0"
+      layer_range: [16, 30]
+    - model: "WizardLMTeam/WizardLM-13B-V1.2"
+      layer_range: [0, 14]
+    merging_method:
+      task_arithmetic:
+          scaling_coefficient: 
+            - value: 1.0
+base_model: "meta-llama/Llama-2-13b-hf"

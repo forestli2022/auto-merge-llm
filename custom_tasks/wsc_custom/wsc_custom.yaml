@@ -1,0 +1,13 @@
+task: wsc_custom
+dataset_path: super_glue
+dataset_name: wsc.fixed
+output_type: multiple_choice
+training_split: train
+validation_split: validation
+doc_to_text: !function utils.default_doc_to_text
+doc_to_target: label
+doc_to_choice: ['B', 'A']
+metric_list:
+  - metric: acc
+metadata:
+  version: 1.0
