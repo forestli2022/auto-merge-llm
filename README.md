@@ -30,7 +30,7 @@ cd auto-merge-llm
 
 # Install dependencies using conda
 conda env create -f environment.yml
-
+```
 ## Usage
 
 The framework uses SMAC optimizer and supports both single-objective and multi-objective optimization approaches.
@@ -41,22 +41,22 @@ The framework uses SMAC optimizer and supports both single-objective and multi-o
 
 ```bash
 python3 merge.py --config ./exp_config/config_lfs.yaml
-
+```
 #### 1.2 Multi-objective Optimization
 
 ```bash
 python3 merge.py --config ./exp_config/config_lfs_mo.yaml
-
+```
 ### 2. Depth-wise Integration (DIS)
 
 ```bash
 python3 merge.py --config ./exp_config/config_dis.yaml
-
+```
 ### 3. Layer Pruning
 
 ```bash
 python3 merge.py --config ./exp_config/config_prune.yaml
-
+```
 We've placed the tasks used in our experiments in the `custom_tasks` directory. You can also design your own optimization objectives.
 
 ### Reproducing Our Results
@@ -68,12 +68,13 @@ We've placed the search configurations from our paper in the `search_config` dir
 We appreciate the excellent open-source projects [MergeKit](https://github.com/arcee-ai/mergekit) and [MergeLM](https://github.com/yule-BUAA/MergeLM). We have referenced or utilized portions of code from these projects.
 
 ## Citation
+
 If you use this framework in your research, please cite our paper:
 
 ```bibtex
-@article{su2025fine,
+@article{su2024fine,
   title={Fine, I'll Merge It Myself: A Multi-Fidelity Framework for Automated Model Merging},
   author={Su, Guinan and Geiping, Jonas},
   journal={arXiv preprint arXiv:2502.04030},
-  year={2025}
+  year={2024}
 }
