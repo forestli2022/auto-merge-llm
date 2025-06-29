@@ -69,7 +69,7 @@ We appreciate the excellent open-source projects [MergeKit](https://github.com/a
 
 ## Citation
 
-If you use this framework in your research, please cite our paper:
+We hope this code will be helpful for your research. If you find it useful, please consider citing our work. 
 
 ```bibtex
 @article{su2024fine,
@@ -77,4 +77,10 @@ If you use this framework in your research, please cite our paper:
   author={Su, Guinan and Geiping, Jonas},
   journal={arXiv preprint arXiv:2502.04030},
   year={2024}
+}
+@article{su2025gptailor,
+  title={GPTailor: Large Language Model Pruning Through Layer Cutting and Stitching},
+  author={Su, Guinan and Shen, Li and Yin, Lu and Liu, Shiwei and Yang, Yanwu and Geiping, Jonas},
+  journal={arXiv preprint arXiv:2506.20480},
+  year={2025}
 }
