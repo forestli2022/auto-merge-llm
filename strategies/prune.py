@@ -215,7 +215,8 @@ class PruneMoMerge(MergeStrategy):
                 result[cur_task] = 1 - eval_result[cur_task]['score']
             
             # Clean up resources
-            del out_tensors
+            if self.in_memory_evaluate:
+                del out_tensors
             del merge_utils._out_tensors
             del merge_utils
             try:
@@ -230,7 +231,8 @@ class PruneMoMerge(MergeStrategy):
             for cur_task in self.evaluate_tasks:
                 result[cur_task] = 1
             try:
-                del out_tensors
+                if self.in_memory_evaluate:
+                    del out_tensors
                 del merge_utils._out_tensors
                 del merge_utils
                 self.evaluator_instance._destroy_llm()
@@ -554,7 +556,7 @@ class PruneMoMerge(MergeStrategy):
             )
         # Run optimization
         incumbent = smac.optimize()
-        self.statistics_manager.final_report()
+        # self.statistics_manager.final_report()
     
     def eval_output(self):
         result = self.evaluator_instance.evaluate(self.output_path)
@@ -590,7 +592,8 @@ class PruneMoMerge(MergeStrategy):
             else:
                 result = self.evaluator_instance.evaluate(self.output_path)  
             
-            del out_tensors
+            if self.in_memory_evaluate:
+                del out_tensors
             del merge_utils._out_tensors
             del merge_utils
             self.evaluator_instance._destroy_llm()
@@ -600,7 +603,8 @@ class PruneMoMerge(MergeStrategy):
             try:
                 self.evaluator_instance._destroy_llm()
                 gc.collect()
-                del out_tensors
+                if self.in_memory_evaluate:
+                    del out_tensors
                 del merge_utils._out_tensors
                 del merge_utils
                 

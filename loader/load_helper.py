@@ -229,6 +229,7 @@ def find_model_path(repo_id):
 
 
 def get_shards_from_disk(model_name):
+    print("getting: ", model_name)
     base_path = get_model_storage_path(model_name)
     model_path = None
     for model_file_name in [
@@ -240,11 +241,13 @@ def get_shards_from_disk(model_name):
             candidate_path + ".index.json"
         ):
             model_path = candidate_path
+            print("model_path:", candidate_path)
             break
 
     if not model_path:
         try:
             download_model(model_name)
+            model_path = os.path.join(base_path, "model.safetensors")
         except:
             raise RuntimeError(f"Unable to find model files at {base_path}")
 

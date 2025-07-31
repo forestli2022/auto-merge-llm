@@ -1,4 +1,4 @@
-name: modelmerge
+name: auto-merge-llm
 channels:
   - rapidsai
   - nvidia
@@ -318,8 +318,8 @@ dependencies:
       - tcolorpy==0.1.7
       - tiktoken==0.8.0
       - tokenizers==0.20.3
-      - torch==2.3.0
-      - torchvision==0.18.0
+      # - torch==2.3.0
+      # - torchvision==0.18.0
       - tqdm==4.67.1
       - tqdm-multiprocess==0.0.11
       - transformers==4.45.2

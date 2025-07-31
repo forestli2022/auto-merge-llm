@@ -105,7 +105,7 @@ class InMemoryMergeEvaluator(MergeActorBase):
                 enforce_eager=self.enforce_eager,
                 batch_size=self.batch_size, 
                 max_model_len= 2048, # Fixed context window
-                gpu_memory_utilization=0.8,
+                gpu_memory_utilization=1,
                 dtype=self.torch_dtype,
                 device="cuda",
                 trust_remote_code=True,
