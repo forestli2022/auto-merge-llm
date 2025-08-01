@@ -94,9 +94,9 @@ class MergeUtils:
     def _load_tokenizer_and_config(self, model):
         model_data = {}
 
+        CACHE_DIR = os.environ.get('TRANSFORMERS_CACHE')
         try:
             temp_model_path = get_model_storage_path(model)
-            CACHE_DIR = os.environ.get('TRANSFORMERS_CACHE')
             model_data['tokenizer'] = AutoTokenizer.from_pretrained(
                 pretrained_model_name_or_path=temp_model_path
             )
@@ -473,6 +473,17 @@ class MergeUtils:
         return slices
                     
     def merge_slices(self):
+        self._pre_cache()
+        self._build_tokenizer_and_embed()
+        for cur_slice in self.slices:
+            self._merge_slice(cur_slice)
+        self._merge_postweights()
+        self._update_output_config()
+    
+        if not self.in_memory:
+            self._finalize_model()
+
+    def fold_slices(self):
         self._pre_cache()
         self._build_tokenizer_and_embed()
         for cur_slice in self.slices:

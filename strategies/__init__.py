@@ -4,6 +4,7 @@ from .lfs import LfsMerge
 from .dis import DisMerge
 from .lfs_multiobj import LfsMoMerge
 from .prune import PruneMoMerge
+from .fold import FoldMerge
 from .merge_utils import MergeUtils
 
 strategy_classes = {
@@ -12,5 +13,6 @@ strategy_classes = {
     'lfs': LfsMerge,
     'dis': DisMerge,
     'lfs_multiobj': LfsMoMerge,
-    'prune': PruneMoMerge
+    'prune': PruneMoMerge,
+    'fold': FoldMerge,
 }

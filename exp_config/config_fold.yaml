@@ -1,14 +1,14 @@
-strategy: prune
+strategy: fold
 global_params:
   random_seed: 0
   cache_dir: "/rds/general/user/fl1123/ephemeral/.cache"
   #load_run_history: None
-  output_path: "/rds/general/user/fl1123/home/code/auto-merge-llm/output/prune"
+  output_path: "/rds/general/user/fl1123/home/code/auto-merge-llm/output/fold"
   evaluation:
     in_memory: true
     vllm: true
     enforce_eager: true
-    batch_size: 1
+    batch_size: 4
     torch_dtype: float16
     #num_fewshot: None
     #limit: 10  # Limit the number of examples per task (for debug). 
