@@ -318,7 +318,7 @@ class MergeUtils:
             except Exception as e:
                 print(f"Error saving tensor '{output_tensor.key}': {e}")
        
-    def _get_slice_config(self, cur_slice, weight_names):
+    def _get_slice_config(self, cur_slice, weight_names, method_key="merging_method"):
         logger.info(f"get slice config: current slice: {cur_slice}, weight_names: {weight_names}")
         sources = cur_slice['sources']
         num_sources = len(sources)
@@ -327,8 +327,8 @@ class MergeUtils:
             weight_names = weight_names * num_sources
         if num_sources != len(weight_names):
             raise ValueError(f"Length mismatch: {num_sources} sources, {len(weight_names)} weight names.")
-        
-        tensor_merge_method, global_tensor_merge_params = list(cur_slice['merging_method'].items())[0]
+
+        tensor_merge_method, global_tensor_merge_params = list(cur_slice[method_key].items())[0]
         tensor_merge_params = []
         tensors_to_merge = []
         for source, weight_name in zip(sources, weight_names):
@@ -486,9 +486,84 @@ class MergeUtils:
     def fold_slices(self):
         self._pre_cache()
         self._build_tokenizer_and_embed()
-        for cur_slice in self.slices:
-            self._merge_slice(cur_slice)
+        
+        idx = len(self.slices) - 1
+        has_merged = False # flag to check if 
+        while idx >= 0:
+            cur_slice = self.slices[idx]
+            prev_slice = self.slices[idx - 1] if idx > 0 else None
+
+            # Merge current slice if not done yet
+            if not has_merged:
+                self.current_layer_offset = idx
+                self._merge_slice(cur_slice)
+                self.current_layer_offset = idx
+            has_merged = False
+
+            # Collapse if layer is to be removed
+            if cur_slice["collapsing_method"]:
+                collapse_method, collapse_params = list(cur_slice["collapsing_method"].items())[0]
+                order = cur_slice["merge_collapse_order"]
+
+                # If layer i-1 is merged first (order == 0)
+                if order == 0:
+                    self.current_layer_offset = idx - 1
+                    self._merge_slice(prev_slice)
+                    self.current_layer_offset = idx - 1
+                    has_merged = True
+                else:
+                    has_merged = False
+
+                for prev_weight_name in self._get_matches_weight_names(str(idx - 1), match_layer=True):
+                    if has_merged:
+                        base_tensor = self._out_tensors[prev_weight_name]
+                    else:
+                        base_tensor = self.base_model_cache.get_tensor(prev_weight_name) if self.base_model else None
+                    cur_weight_name = prev_weight_name.replace(f"layers.{idx - 1}.", f"layers.{idx}.")
+                    donor_tensor = self._out_tensors[cur_weight_name]
+
+                    # Collapse the tensor
+                    self._merge_tensor(
+                        prev_weight_name,
+                        base_tensor,
+                        [donor_tensor],
+                        collapse_method,
+                        collapse_params,
+                    )
+
+                    self._out_tensors.pop(cur_weight_name, None)
+                
+            idx -= 1
+
         self._merge_postweights()
+
+        # Need to fix the tensor names and remove redundant tensors after collapsing
+        index_map = {} # map to track the new indices of layers
+        new_idx = 0
+        # e.g. if we have 3 layers and the second layer is collapsed, we will have a mapping like {0: 0, 2: 1}
+        for old_idx, slice in enumerate(self.slices):
+            print(f"Processing slice {old_idx}")
+            if slice["collapsing_method"]:
+                # This slice is removed -> no new index
+                continue
+            index_map[old_idx] = new_idx
+            new_idx += 1
+        # Update the _output_tensors with the retained layer indices
+        layer_pat = re.compile(r"model\.layers\.(\d+)\.")
+        new_tensors = {}
+        for name, tensor in self._out_tensors.items():
+            m = layer_pat.search(name)
+            if m:
+                old_idx = int(m.group(1))
+                if old_idx in index_map.keys():
+                    new_idx = index_map[old_idx]
+                    new_name = name.replace(f"layers.{old_idx}.", f"layers.{new_idx}.")
+                    new_tensors[new_name] = tensor
+            else:
+                new_tensors[name] = tensor     # embeddings, lm_head, etc.
+        self._out_tensors = new_tensors
+        self._output_config.num_hidden_layers = len(set(index_map.values()))
+
         self._update_output_config()
     
         if not self.in_memory:

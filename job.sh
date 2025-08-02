@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -l walltime=06:00:00
-#PBS -l select=1:ncpus=4:mem=128gb:ngpus=2:gpu_type=L40S
+#PBS -l select=1:ncpus=4:mem=128gb:ngpus=1:gpu_type=L40S
 #PBS -j oe
 #PBS -o /rds/general/user/fl1123/home/code/auto-merge-llm/job_output.log
 

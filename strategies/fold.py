@@ -104,9 +104,8 @@ class FoldMerge(MergeStrategy):
         
         slices = []
         output_scales = []
+        # From layer 0 to layer num_hidden_layers-1
         for layer_idx in range(self.candidate_layers):
-            if layer_idx in remove_indices:
-                continue
             
             target = {
                 "model": self.base_model,
@@ -122,6 +121,8 @@ class FoldMerge(MergeStrategy):
                     candidate_layer.append(model)
             
             merge_scale = config.get(f'layer_{layer_idx}_merge_scale_factor', 1)
+            collapse_scale = config.get(f'layer_{layer_idx}_collapse_scale_factor', 1.0)
+            merge_collapse_order = config.get(f'layer_{layer_idx}_collapse_order', 0)
             
             if len(candidate_layer) == 0:
                 slice_dict = {
@@ -169,6 +170,15 @@ class FoldMerge(MergeStrategy):
                     "merging_method": {"task_arithmetic": {"scaling_coefficient": [{"value": merge_scale}]}},
                 }
                     
+
+            # Add collapse scale factor and merge/collapse order if the layer is in the remove list
+            if layer_idx in remove_indices:
+                slice_dict["collapsing_method"] = {
+                    "task_arithmetic": {
+                        "scaling_coefficient": [{"value": collapse_scale}]
+                    }
+                }
+                slice_dict["merge_collapse_order"] = merge_collapse_order
             slices.append(slice_dict)
         
         return slices, None  
@@ -200,7 +210,7 @@ class FoldMerge(MergeStrategy):
             in_memory=self.in_memory_evaluate,
             output_scales=output_scales
         )
-        merge_utils.merge_slices()
+        merge_utils.fold_slices()
         try:
             if self.in_memory_evaluate:
                 out_tensors = merge_utils.out_tensors
@@ -369,8 +379,8 @@ class FoldMerge(MergeStrategy):
         
         # Create basic ranges
         higher = list(range(mid, num_hidden_layers - 1))  # Higher layers (excluding the highest)
-        lower = list(range(1, mid))                       # Lower layers (excluding the lowest)
-        extremes = [num_hidden_layers - 1, 0]             # Highest and lowest layers
+        lower = list(range(2, mid))                       # Lower layers (excluding the lowest)
+        extremes = [num_hidden_layers - 1, 1]             # Highest and lowest layers
         
         # Option 1: Higher layers first, then lower
         higher_first = higher.copy()
