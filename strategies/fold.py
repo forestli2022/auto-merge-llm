@@ -117,12 +117,13 @@ class FoldMerge(MergeStrategy):
             
             candidate_layer = []
             for cand_idx, model in enumerate(self.models):
-                if config[f'layer_{layer_idx}_candidate_{cand_idx}']:
+                if f'layer_{layer_idx}_candidate_{cand_idx}' in config.keys():
                     candidate_layer.append(model)
             
             merge_scale = config.get(f'layer_{layer_idx}_merge_scale_factor', 1)
-            collapse_scale = config.get(f'layer_{layer_idx}_collapse_scale_factor', 1.0)
-            merge_collapse_order = config.get(f'layer_{layer_idx}_collapse_order', 0)
+            if layer_idx in remove_indices:
+                collapse_scale = config.get(f'layer_{layer_idx}_collapse_scale_factor', 1.0)
+                merge_collapse_order = config.get(f'layer_{layer_idx}_merge_collapse_order', 0)
             
             if len(candidate_layer) == 0:
                 slice_dict = {
@@ -192,13 +193,6 @@ class FoldMerge(MergeStrategy):
         # Generate model configuration
         slices, output_scales = self.generate_genotype(config)
         logger.info(f"current genotype : {slices}")
-        
-        layer_len = len(slices)   
-        if layer_len > self.max_layers:
-            logger.info(f"layer {layer_len} too large, set reward to 0")
-            for cur_task in self.evaluate_tasks:
-                result[cur_task] = 1
-            return result
         
         # Create merged model
         merge_utils = MergeUtils(
@@ -326,20 +320,69 @@ class FoldMerge(MergeStrategy):
             cs.add_hyperparameter(scale_factor_param)
             
             # Add conditions
+            # if remove_count!=0:
+            #     merge_method_conditions = []
+            #     for i in range(remove_count):
+            #         remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+            #         condition = NotEqualsCondition(
+            #             scale_factor_param,  
+            #             remove_idx_param,   
+            #             layer_idx           
+            #         )
+            #         merge_method_conditions.append(condition)
+            #     if merge_method_conditions:
+            #             merge_method_condition = AndConjunction(*merge_method_conditions)
+            #             cs.add_condition(merge_method_condition)    
+            
+            # Add collapse scale factor parameter
+            collapse_scale_param = UniformFloatHyperparameter(
+                f'layer_{layer_idx}_collapse_scale_factor', 
+                lower=min_value, 
+                upper=max_value, 
+                default_value=1.0
+            )
+            cs.add_hyperparameter(collapse_scale_param)
+
+            # Add conditions
             if remove_count!=0:
-                merge_method_conditions = []
+                collapse_conditions = []
                 for i in range(remove_count):
                     remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                    condition = NotEqualsCondition(
-                        scale_factor_param,  
+                    condition = EqualsCondition(
+                        collapse_scale_param,  
                         remove_idx_param,   
-                        layer_idx           
+                        layer_idx            
                     )
-                    merge_method_conditions.append(condition)
-                if merge_method_conditions:
-                        merge_method_condition = AndConjunction(*merge_method_conditions)
-                        cs.add_condition(merge_method_condition)    
+                    collapse_conditions.append(condition)
+                
+                if collapse_conditions:
+                    collapse_condition = AndConjunction(*collapse_conditions)
+                    cs.add_condition(collapse_condition)
             
+            # Add merge collapse order parameter
+            merge_collapse_order_param = CategoricalHyperparameter(
+                f'layer_{layer_idx}_merge_collapse_order', 
+                choices=[0, 1],  # 0 for merge (i-1)th layer first, 1 for collapse first
+                default_value=0
+            )
+            cs.add_hyperparameter(merge_collapse_order_param)
+
+            # Add conditions
+            if remove_count!=0:
+                merge_collapse_order_conditions = []
+                for i in range(remove_count):
+                    remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+                    condition = EqualsCondition(
+                        merge_collapse_order_param,  
+                        remove_idx_param,   
+                        layer_idx            
+                    )
+                    merge_collapse_order_conditions.append(condition)
+                
+                if merge_collapse_order_conditions:
+                    merge_collapse_order_condition = AndConjunction(*merge_collapse_order_conditions)
+                    cs.add_condition(merge_collapse_order_condition)
+
             # Add output scale parameter
             output_scale_param = UniformFloatHyperparameter(
                 f'layer_{layer_idx}_output_scale', 
@@ -460,7 +503,7 @@ class FoldMerge(MergeStrategy):
                 if layer_idx in remove_list:
                     config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 1.0
                     # Randomly set merge/collapse order: 0 for merge (i-1)th layer first, 1 for collapse first
-                    config_dict[f'layer_{layer_idx}_collapse_order'] = random.randint(0, 1)
+                    config_dict[f'layer_{layer_idx}_merge_collapse_order'] = random.randint(0, 1)
 
                 for cand_idx in range(self.candidates_per_layer):
                     config_dict[f'layer_{layer_idx}_candidate_{cand_idx}'] = 0
@@ -469,28 +512,28 @@ class FoldMerge(MergeStrategy):
             
             # Generate configurations for different merge factors and candidate patterns
             for merge_scale in merge_scales:
-                for collapse_scale in merge_scales:
-                    for candidate_pattern in candidate_patterns:
-                        config_dict = {}
-                        
-                        if len(remove_list) != 0:
-                            for i, idx in enumerate(remove_list):
-                                config_dict[f'remove_idx_{i}'] = idx
-                                
-                        for layer_idx in range(total_layers):
-                            config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
-                            config_dict[f'layer_{layer_idx}_merge_scale_factor'] = merge_scale
-
-                            # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
-                            if layer_idx in remove_list:
-                                config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = collapse_scale
-                                # Randomly set merge/collapse order: 0 for merge (i-1)th layer first, 1 for collapse first
-                                config_dict[f'layer_{layer_idx}_collapse_order'] = random.randint(0, 1)
+                for candidate_pattern in candidate_patterns:
+                    config_dict = {}
+                    
+                    if len(remove_list) != 0:
+                        for i, idx in enumerate(remove_list):
+                            config_dict[f'remove_idx_{i}'] = idx
                             
-                            for cand_idx in range(self.candidates_per_layer):
-                                config_dict[f'layer_{layer_idx}_candidate_{cand_idx}'] = candidate_pattern[cand_idx]
-                                    
-                        initial_params.append(config_dict)
+                    for layer_idx in range(total_layers):
+                        config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
+                        config_dict[f'layer_{layer_idx}_merge_scale_factor'] = merge_scale
+
+                        # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
+                        if layer_idx in remove_list:
+                            # FIXME: Find a way to set collapse factor
+                            config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.3
+                            # Randomly set merge/collapse order: 0 for merge (i-1)th layer first, 1 for collapse first
+                            config_dict[f'layer_{layer_idx}_merge_collapse_order'] = random.randint(0, 1)
+                        
+                        for cand_idx in range(self.candidates_per_layer):
+                            config_dict[f'layer_{layer_idx}_candidate_{cand_idx}'] = candidate_pattern[cand_idx]
+                                
+                    initial_params.append(config_dict)
 
         return initial_params
 
@@ -559,6 +602,7 @@ class FoldMerge(MergeStrategy):
             # Generate initial configurations
             init_trials = self.get_initial_params()
             configurations = [Configuration(configspace, trial, allow_inactive_with_values=True) for trial in init_trials]
+            logger.info(f"Number of initial configurations: {len(configurations)}")
             initial_design=HyperparameterOptimizationFacade.get_initial_design(
                 scenario,
                 n_configs=self.random_init_points,
@@ -578,6 +622,7 @@ class FoldMerge(MergeStrategy):
         # Run optimization
         incumbent = smac.optimize()
         # self.statistics_manager.final_report()
+        return incumbent
     
     def eval_output(self):
         result = self.evaluator_instance.evaluate(self.output_path)
@@ -638,6 +683,10 @@ class FoldMerge(MergeStrategy):
         
     def merge(self):
         study = self.optimize()
+
+        # Save study as a JSON file
+        with open(os.path.join(self.output_path, "study.json"), "w") as f:
+            json.dump([dict(conf) for conf in study], f, indent=2)
         
 if __name__ == "__main__":
     pass

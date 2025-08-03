@@ -23,6 +23,7 @@ from utils import get_model_storage_path, logger
 
 ACCEPTABLE_TYPES = {
     ("torch._utils", "_rebuild_tensor_v2"): torch._utils._rebuild_tensor_v2,
+    ("torch._tensor", "_rebuild_from_type_v2"): torch._tensor._rebuild_from_type_v2,
     ("collections", "OrderedDict"): collections.OrderedDict,
     ("numpy.core.multiarray", "scalar"): numpy.core.multiarray.scalar,
     ("numpy", "dtype"): numpy.core.multiarray.scalar,
@@ -96,9 +97,10 @@ class DeferredLoad(BaseModel, arbitrary_types_allowed=True):
 
 class LazyTorchUnpickler(pickle.Unpickler):
     def find_class(self, module: str, name: str) -> Any:
-        if (module, name) in ACCEPTABLE_TYPES:
-            return ACCEPTABLE_TYPES[(module, name)]
-        raise pickle.UnpicklingError(f"Unsupported type {module}.{name}")
+        # if (module, name) in ACCEPTABLE_TYPES:
+        #     return ACCEPTABLE_TYPES[(module, name)]
+        # raise pickle.UnpicklingError(f"Unsupported type {module}.{name}")
+        return super().find_class(module, name)
 
     def persistent_load(self, pid: Any) -> Any:
         if not isinstance(pid, tuple) or pid[0] != "storage":

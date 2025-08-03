@@ -1,8 +1,8 @@
 #!/bin/bash
-#PBS -l walltime=06:00:00
-#PBS -l select=1:ncpus=4:mem=128gb:ngpus=1:gpu_type=L40S
+#PBS -l walltime=08:00:00
+#PBS -l select=1:ncpus=4:mem=200gb:ngpus=1:gpu_type=L40S
 #PBS -j oe
-#PBS -o /rds/general/user/fl1123/home/code/auto-merge-llm/job_output.log
+#PBS -o /rds/general/user/fl1123/home/code/auto-merge-llm/job_prune.log
 
 module load Python/3.12.3-GCCcore-13.3.0
 
@@ -16,6 +16,7 @@ conda activate auto-merge-llm
 cd $PBS_O_WORKDIR
 
 # Set huggingface token and login
+export HF_TOKEN=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
 huggingface-cli login --token $HF_TOKEN
 
 # Optional: Debug check

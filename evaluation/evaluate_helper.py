@@ -17,10 +17,17 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_DATASETS_TRUST_REMOTE_CODE"] = "true"
 
 def eval_model(model, tasks, model_args=None, task_manager=None, **kwargs):
+    logger.info("Starting evaluation...")
+    logger.info(model)
+    logger.info(model_args)
+    logger.info([{k: v for k, v in task.items() if k != 'metric'} for task in tasks])
+    logger.info(task_manager)
+    logger.info(kwargs)
+
     results = lm_eval.evaluator.simple_evaluate(
         model=model,
         model_args=model_args,
-        tasks=[{k: v for k, v in task.items() if k != 'metric'} for task in tasks], 
+        tasks=[{k: v for k, v in task.items() if k not in ["metric", "limit"]} for task in tasks], 
         log_samples=True, # for debug
         verbosity="DEBUG",
         task_manager=task_manager,
@@ -28,6 +35,7 @@ def eval_model(model, tasks, model_args=None, task_manager=None, **kwargs):
     )
     for task in tasks:
         results["results"][task['task']]['score'] = results["results"][task['task']][task['metric']]
+    logger.info(f"Evaluation results: {results['results']}")
     return results["results"] 
     
 def evaluate_model(merged_path, tasks, num_fewshot, limit, vllm, 

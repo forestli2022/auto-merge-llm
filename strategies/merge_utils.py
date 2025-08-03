@@ -501,7 +501,7 @@ class MergeUtils:
             has_merged = False
 
             # Collapse if layer is to be removed
-            if cur_slice["collapsing_method"]:
+            if "collapsing_method" in cur_slice.keys():
                 collapse_method, collapse_params = list(cur_slice["collapsing_method"].items())[0]
                 order = cur_slice["merge_collapse_order"]
 
@@ -543,7 +543,7 @@ class MergeUtils:
         # e.g. if we have 3 layers and the second layer is collapsed, we will have a mapping like {0: 0, 2: 1}
         for old_idx, slice in enumerate(self.slices):
             print(f"Processing slice {old_idx}")
-            if slice["collapsing_method"]:
+            if "collapsing_method" in slice.keys():
                 # This slice is removed -> no new index
                 continue
             index_map[old_idx] = new_idx

@@ -557,6 +557,7 @@ class PruneMoMerge(MergeStrategy):
         # Run optimization
         incumbent = smac.optimize()
         # self.statistics_manager.final_report()
+        return incumbent
     
     def eval_output(self):
         result = self.evaluator_instance.evaluate(self.output_path)
@@ -617,6 +618,10 @@ class PruneMoMerge(MergeStrategy):
         
     def merge(self):
         study = self.optimize()
+
+        # Save study as a JSON file
+        with open(os.path.join(self.output_path, "study.json"), "w") as f:
+            json.dump([dict(conf) for conf in study], f, indent=2)
         
 if __name__ == "__main__":
     pass

@@ -5,25 +5,32 @@ global_params:
   #load_run_history: None
   output_path: "/rds/general/user/fl1123/home/code/auto-merge-llm/output/fold"
   evaluation:
-    in_memory: true
+    in_memory: false
     vllm: true
     enforce_eager: true
     batch_size: 4
     torch_dtype: float16
     #num_fewshot: None
     #limit: 10  # Limit the number of examples per task (for debug). 
-    device: "cuda"
+    device: "cpu"
     include_path: ""
     tasks:
+      - task: piqa
+        metric: "acc,none"
+        test_split: train
+      - task: wsc
+        metric: "acc,none"
+        test_split: train
+      - task: commonsense_qa
+        metric: "acc,none"
+        test_split: train
       - task: mmlu
         metric: "acc,none"
         test_split: validation
-      - task: wsc_custom
-        metric: "acc,none"
-        test_split: train
 strategies:
   normal_models: !include normal_models.yaml
   normal_slices: !include normal_slices.yaml
   lfs: !include lfs.yaml
   dis: !include dis.yaml
   prune: !include prune.yaml
+  fold: !include fold.yaml
