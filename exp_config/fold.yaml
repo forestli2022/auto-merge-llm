@@ -1,22 +1,26 @@
 eta: 3 
 n_workers: 2
-n_trials: 500
+n_trials: 250
 random_init_points: 0
 min_budget: 100  # minimum budget per trial
-max_budget: 1000 # maximum budget per trial 1000 
+max_budget: 500 # maximum budget per trial 1000 
 total_budget: 0
-num_hidden_layers: 32
-layers: 23
+num_hidden_layers: 16
+layers: 10
 # base_model: "meta-llama/Llama-2-13b-hf"
 # models:
 #     - "WizardLMTeam/WizardLM-13B-V1.2"
 #     - "vanillaOVO/WizardMath-13B-V1.0"
 #     - "layoric/llama-2-13b-code-alpaca"
-base_model: "meta-llama/Llama-2-7b-hf"
+# base_model: "meta-llama/Llama-2-7b-hf"
+# models:
+#     - "TIGER-Lab/MAmmoTH-7B"
+#     - "meta-llama/Llama-2-7b-chat-hf"
+#     - "mrm8488/llama-2-coder-7b"
+base_model: "meta-llama/Llama-3.2-1B"
 models:
-    - "TIGER-Lab/MAmmoTH-7B"
-    - "meta-llama/Llama-2-7b-chat-hf"
-    - "mrm8488/llama-2-coder-7b"
+    - "ai-nexuz/llama-3.2-1b-instruct-fine-tuned"
+    - "erbacher/llama3.2-1B-MATH"
 merging_method: 
   task_arithmetic:
     scaling_coefficient: 

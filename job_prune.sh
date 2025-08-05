@@ -16,7 +16,7 @@ conda activate auto-merge-llm
 cd $PBS_O_WORKDIR
 
 # Set huggingface token and login
-export HF_TOKEN=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
+export HF_TOKEN=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
 huggingface-cli login --token $HF_TOKEN
 
 # Optional: Debug check

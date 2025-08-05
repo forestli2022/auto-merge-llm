@@ -42,6 +42,7 @@ from smac.runhistory import TrialInfo, TrialValue
 # Local application imports
 from evaluation import evaluator_classes
 from utils import logger
+from utils.utils import get_figure
 from .base_strategy import MergeStrategy
 from .merge_utils import MergeUtils
 
@@ -619,9 +620,16 @@ class PruneMoMerge(MergeStrategy):
     def merge(self):
         study = self.optimize()
 
+        print(study)
+        print(self.eval_config(study))
         # Save study as a JSON file
-        with open(os.path.join(self.output_path, "study.json"), "w") as f:
-            json.dump([dict(conf) for conf in study], f, indent=2)
+        try:
+            with open(os.path.join(self.output_path, "study.json"), "w") as f:
+                json.dump([dict(conf) for conf in study], f, indent=2)
+        except:
+            # Save single config
+            with open(os.path.join(self.output_path, "study.json"), "w") as f:
+                json.dump(dict(study), f, indent=2)
         
 if __name__ == "__main__":
     pass

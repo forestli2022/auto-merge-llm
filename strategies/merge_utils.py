@@ -148,7 +148,7 @@ class MergeUtils:
             return {
                 model: TensorLoader(
                     model_name=model,
-                    lazy_unpickle=True,
+                    lazy_unpickle=False,
                     device=self.device
                 )
                 for model in set([cur_model['model'] for cur_model in self.merging_models])
@@ -159,7 +159,7 @@ class MergeUtils:
             return {
                 model: TensorLoader(
                     model_name=model,
-                    lazy_unpickle=True,
+                    lazy_unpickle=False,
                     device=self.device
                 )
                 for model in model_set
@@ -220,7 +220,7 @@ class MergeUtils:
         self.base_model_cache = (
             TensorLoader(
                 model_name=self.base_model,
-                lazy_unpickle=True,
+                lazy_unpickle=False,
                 device=self.device
             )
             if self.base_model
@@ -245,7 +245,10 @@ class MergeUtils:
             return weights[0]
 
         input_embed_name = get_single_weight("embed")
-        output_embed_name = get_single_weight("lm_head")
+        try:
+            output_embed_name = get_single_weight("lm_head")
+        except:
+            output_embed_name = get_single_weight("embed_tokens")
         
         base_embeds = [
             self.base_model_cache.get_tensor(name) if self.base_model else None
@@ -484,6 +487,8 @@ class MergeUtils:
             self._finalize_model()
 
     def fold_slices(self):
+        logger.info("Start folding slices...")
+        logger.info(f"Current slices: {self.slices}")
         self._pre_cache()
         self._build_tokenizer_and_embed()
         
@@ -502,6 +507,7 @@ class MergeUtils:
 
             # Collapse if layer is to be removed
             if "collapsing_method" in cur_slice.keys():
+                logger.info(f"Collapsing layer {idx} to layer {idx - 1}")
                 collapse_method, collapse_params = list(cur_slice["collapsing_method"].items())[0]
                 order = cur_slice["merge_collapse_order"]
 
@@ -526,7 +532,7 @@ class MergeUtils:
                     self._merge_tensor(
                         prev_weight_name,
                         base_tensor,
-                        [donor_tensor],
+                        [base_tensor, donor_tensor],
                         collapse_method,
                         collapse_params,
                     )
@@ -563,6 +569,10 @@ class MergeUtils:
                 new_tensors[name] = tensor     # embeddings, lm_head, etc.
         self._out_tensors = new_tensors
         self._output_config.num_hidden_layers = len(set(index_map.values()))
+
+        # Log the final number of layers, which layers are collapsed
+        logger.info(f"Final number of layers: {self._output_config.num_hidden_layers}")
+        logger.info(f"Layers retained: {set(index_map.keys())}")
 
         self._update_output_config()
     

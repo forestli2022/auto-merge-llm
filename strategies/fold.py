@@ -269,7 +269,7 @@ class FoldMerge(MergeStrategy):
             # Add constraints to prevent duplicate removals
             for i in range(remove_count-1):
                 for j in range(i+1, remove_count):
-                    for val in range(self.num_hidden_layers):
+                    for val in range(1, self.num_hidden_layers):
                         cs.add_forbidden_clause(
                             ForbiddenAndConjunction(
                                 ForbiddenEqualsClause(cs.get_hyperparameter(f'remove_idx_{i}'), val),
@@ -289,20 +289,20 @@ class FoldMerge(MergeStrategy):
                 cs.add_hyperparameter(candidate_param)
 
                 # Add conditions for layer removal
-                if remove_count!=0:
-                    candidate_conditions = []
-                    for i in range(remove_count):
-                        remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                        condition = NotEqualsCondition(
-                            candidate_param,  
-                            remove_idx_param,   
-                            layer_idx           
-                        )
-                        candidate_conditions.append(condition)
+                # if remove_count!=0:
+                #     candidate_conditions = []
+                #     for i in range(remove_count):
+                #         remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+                #         condition = NotEqualsCondition(
+                #             candidate_param,  
+                #             remove_idx_param,   
+                #             layer_idx           
+                #         )
+                #         candidate_conditions.append(condition)
                 
-                    if candidate_conditions:
-                        candidate_condition = AndConjunction(*candidate_conditions)
-                        cs.add_condition(candidate_condition)
+                #     if candidate_conditions:
+                #         candidate_condition = AndConjunction(*candidate_conditions)
+                #         cs.add_condition(candidate_condition)
             
             # Add merging method parameters
             method_config = self.merging_method["task_arithmetic"]
@@ -646,7 +646,7 @@ class FoldMerge(MergeStrategy):
             in_memory=self.in_memory_evaluate,
             output_scales=output_scales
         )
-        merge_utils.merge_slices()
+        merge_utils.fold_slices()
         
         try:
             if self.in_memory_evaluate:
@@ -685,8 +685,13 @@ class FoldMerge(MergeStrategy):
         study = self.optimize()
 
         # Save study as a JSON file
-        with open(os.path.join(self.output_path, "study.json"), "w") as f:
-            json.dump([dict(conf) for conf in study], f, indent=2)
+        try:
+            with open(os.path.join(self.output_path, "study.json"), "w") as f:
+                json.dump([dict(conf) for conf in study], f, indent=2)
+        except:
+            # Save single config
+            with open(os.path.join(self.output_path, "study.json"), "w") as f:
+                json.dump(dict(study), f, indent=2)
         
 if __name__ == "__main__":
     pass
