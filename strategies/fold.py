@@ -42,6 +42,7 @@ from smac.runhistory import TrialInfo, TrialValue
 # Local application imports
 from evaluation import evaluator_classes
 from utils import logger
+from utils.utils import get_figure
 from .base_strategy import MergeStrategy
 from .merge_utils import MergeUtils
 
@@ -261,7 +262,7 @@ class FoldMerge(MergeStrategy):
             for i in range(remove_count):
                 cs.add_hyperparameter(UniformIntegerHyperparameter(
                     f'remove_idx_{i}', 
-                    lower=0, 
+                    lower=1,
                     upper=self.num_hidden_layers-1, 
                     default_value=remove_list[i],
                 ))
@@ -335,78 +336,79 @@ class FoldMerge(MergeStrategy):
             #             cs.add_condition(merge_method_condition)    
             
             # Add collapse scale factor parameter
-            collapse_scale_param = UniformFloatHyperparameter(
-                f'layer_{layer_idx}_collapse_scale_factor', 
-                lower=min_value, 
-                upper=max_value, 
-                default_value=1.0
-            )
-            cs.add_hyperparameter(collapse_scale_param)
+            if layer_idx != 0:
+                collapse_scale_param = UniformFloatHyperparameter(
+                    f'layer_{layer_idx}_collapse_scale_factor', 
+                    lower=min_value, 
+                    upper=max_value, 
+                    default_value=1.0
+                )
+                cs.add_hyperparameter(collapse_scale_param)
 
-            # Add conditions
-            if remove_count!=0:
-                collapse_conditions = []
-                for i in range(remove_count):
-                    remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                    condition = EqualsCondition(
-                        collapse_scale_param,  
-                        remove_idx_param,   
-                        layer_idx            
-                    )
-                    collapse_conditions.append(condition)
+                # Add conditions
+                if remove_count!=0:
+                    collapse_conditions = []
+                    for i in range(remove_count):
+                        remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+                        condition = EqualsCondition(
+                            collapse_scale_param,  
+                            remove_idx_param,   
+                            layer_idx            
+                        )
+                        collapse_conditions.append(condition)
+                    
+                    if collapse_conditions:
+                        collapse_condition = AndConjunction(*collapse_conditions)
+                        cs.add_condition(collapse_condition)
                 
-                if collapse_conditions:
-                    collapse_condition = AndConjunction(*collapse_conditions)
-                    cs.add_condition(collapse_condition)
-            
-            # Add merge collapse order parameter
-            merge_collapse_order_param = CategoricalHyperparameter(
-                f'layer_{layer_idx}_merge_collapse_order', 
-                choices=[0, 1],  # 0 for merge (i-1)th layer first, 1 for collapse first
-                default_value=0
-            )
-            cs.add_hyperparameter(merge_collapse_order_param)
+                # Add merge collapse order parameter
+                merge_collapse_order_param = CategoricalHyperparameter(
+                    f'layer_{layer_idx}_merge_collapse_order', 
+                    choices=[0, 1],  # 0 for merge (i-1)th layer first, 1 for collapse first
+                    default_value=0
+                )
+                cs.add_hyperparameter(merge_collapse_order_param)
 
-            # Add conditions
-            if remove_count!=0:
-                merge_collapse_order_conditions = []
-                for i in range(remove_count):
-                    remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                    condition = EqualsCondition(
-                        merge_collapse_order_param,  
-                        remove_idx_param,   
-                        layer_idx            
-                    )
-                    merge_collapse_order_conditions.append(condition)
-                
-                if merge_collapse_order_conditions:
-                    merge_collapse_order_condition = AndConjunction(*merge_collapse_order_conditions)
-                    cs.add_condition(merge_collapse_order_condition)
+                # Add conditions
+                if remove_count!=0:
+                    merge_collapse_order_conditions = []
+                    for i in range(remove_count):
+                        remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+                        condition = EqualsCondition(
+                            merge_collapse_order_param,  
+                            remove_idx_param,   
+                            layer_idx            
+                        )
+                        merge_collapse_order_conditions.append(condition)
+                    
+                    if merge_collapse_order_conditions:
+                        merge_collapse_order_condition = AndConjunction(*merge_collapse_order_conditions)
+                        cs.add_condition(merge_collapse_order_condition)
 
-            # Add output scale parameter
-            output_scale_param = UniformFloatHyperparameter(
-                f'layer_{layer_idx}_output_scale', 
-                lower=0, 
-                upper=2.0, 
-                default_value=1.0
-            )
-            cs.add_hyperparameter(output_scale_param)
-            
-            # Add conditions
-            if remove_count!=0:
-                output_scale_conditions = []
-                for i in range(remove_count):
-                    remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                    condition = NotEqualsCondition(
-                        output_scale_param,  
-                        remove_idx_param,   
-                        layer_idx            
-                    )
-                    output_scale_conditions.append(condition)
+                # Add output scale parameter
+                output_scale_param = UniformFloatHyperparameter(
+                    f'layer_{layer_idx}_output_scale', 
+                    lower=0, 
+                    upper=2.0, 
+                    default_value=1.0
+                )
+                cs.add_hyperparameter(output_scale_param)
                 
-                if output_scale_conditions:
-                    output_scale_condition = AndConjunction(*output_scale_conditions)
-                    cs.add_condition(output_scale_condition)
+                # Add conditions
+                if remove_count!=0:
+                    output_scale_conditions = []
+                    for i in range(remove_count):
+                        remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+                        condition = NotEqualsCondition(
+                            output_scale_param,  
+                            remove_idx_param,   
+                            layer_idx            
+                        )
+                        output_scale_conditions.append(condition)
+                    
+                    if output_scale_conditions:
+                        output_scale_condition = AndConjunction(*output_scale_conditions)
+                        cs.add_condition(output_scale_condition)
 
         return cs 
 
@@ -496,7 +498,8 @@ class FoldMerge(MergeStrategy):
                     config_dict[f'remove_idx_{i}'] = idx
                     
             for layer_idx in range(total_layers):
-                config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
+                if layer_idx != 0:
+                    config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
                 config_dict[f'layer_{layer_idx}_merge_scale_factor'] = 1.0
                 
                 # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
@@ -520,7 +523,8 @@ class FoldMerge(MergeStrategy):
                             config_dict[f'remove_idx_{i}'] = idx
                             
                     for layer_idx in range(total_layers):
-                        config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
+                        if layer_idx != 0:
+                            config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
                         config_dict[f'layer_{layer_idx}_merge_scale_factor'] = merge_scale
 
                         # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
@@ -598,6 +602,7 @@ class FoldMerge(MergeStrategy):
                     seed=trial_key.seed,
                 )
                 smac.tell(trial_info, trial_value) 
+            logger.info(f"Loaded {len(runhistory)} previous evaluations from {self.load_run_history}")
         else:
             # Generate initial configurations
             init_trials = self.get_initial_params()
@@ -621,6 +626,26 @@ class FoldMerge(MergeStrategy):
             )
         # Run optimization
         incumbent = smac.optimize()
+
+        def to_builtin(val):
+            return val.item() if hasattr(val, "item") else val
+
+
+        for i in range(len(incumbent)):
+            current_result_path = os.path.join(self.output_path, str(i))
+            logger.info(f"Evaluating incumbent {i}...")
+            # Evaluate the incumbent configuration
+            eval_result = self.eval_config(incumbent[i], i, path=current_result_path)
+            logger.info(f"Results: {eval_result}")
+            with open(os.path.join(current_result_path, f"evaluation result {i}.json"), "w") as f:
+                json.dump(eval_result, f, indent=2)
+
+            # Save the configuration
+            sanitized_config = {k: to_builtin(v) for k, v in dict(incumbent[i]).items()}
+            # Save single config
+            with open(os.path.join(current_result_path, f"incumbent {i}.json"), "w") as f:
+                json.dump(dict(sanitized_config), f, indent=2)
+
         # self.statistics_manager.final_report()
         return incumbent
     
@@ -629,14 +654,18 @@ class FoldMerge(MergeStrategy):
         return result
          
     
-    def eval_config(self, config, config_id=0):
-        """Evaluate a specific configuration."""
+    def eval_config(self, config, config_id=0, path=None):
+        """Evaluate a specific configuration on the full final benchmark suite."""
         logger.info(f"start eval, config is : {config}")
         result = {}
-       
+
         slices, output_scales = self.generate_genotype(config)
-        get_figure(slices, os.path.join(self.output_path, str(config_id)+".png"), output_scales)
+        output_path = self.output_path if path is None else path
+
+        get_figure(slices, os.path.join(output_path, f"{config_id}.png"), output_scales)
         logger.info(f"current genotype : {slices}")
+
+        # Merge model
         merge_utils = MergeUtils(
             base_model=self.base_model,
             merging_models=None,
@@ -647,51 +676,53 @@ class FoldMerge(MergeStrategy):
             output_scales=output_scales
         )
         merge_utils.fold_slices()
-        
+
         try:
+            # Construct new config with full eval tasks
+            self.config['evaluation']['tasks'] = self.config['evaluation']["final_evaluation_tasks"]
+            full_evaluator_instance = self.evaluator_class(self.config)
+
+            # Evaluate
             if self.in_memory_evaluate:
                 out_tensors = merge_utils.out_tensors
                 output_config = merge_utils.output_config
                 aligned_tokenizer = merge_utils.aligned_tokenizer
                 logger.info(f"current layer is {output_config.num_hidden_layers}")
-                result = self.evaluator_instance.evaluate(out_tensors, output_config, aligned_tokenizer)   
+                result = full_evaluator_instance.evaluate(out_tensors, output_config, aligned_tokenizer)
             else:
-                result = self.evaluator_instance.evaluate(self.output_path)  
-            
+                result = full_evaluator_instance.evaluate(self.output_path)
+
+            # Cleanup
             if self.in_memory_evaluate:
                 del out_tensors
             del merge_utils._out_tensors
             del merge_utils
-            self.evaluator_instance._destroy_llm()
-            gc.collect()    
+            try:
+                full_evaluator_instance._destroy_llm()
+            except:
+                logger.error("fail to destroy llm")
+            gc.collect()
         except Exception as e:
             logger.info(traceback.format_exc())
             try:
-                self.evaluator_instance._destroy_llm()
+                try:
+                    full_evaluator_instance._destroy_llm()
+                except:
+                    logger.error("fail to destroy llm")
                 gc.collect()
                 if self.in_memory_evaluate:
                     del out_tensors
                 del merge_utils._out_tensors
                 del merge_utils
-                
             except:
                 logger.error("fail to eval and clean fail")
                 logger.error(traceback.format_exc())
-            result[self.evaluate_tasks[0]]={}
-            result[self.evaluate_tasks[0]]['score'] = 0
+            result["error"] = str(e)
+
         return result
         
     def merge(self):
         study = self.optimize()
 
-        # Save study as a JSON file
-        try:
-            with open(os.path.join(self.output_path, "study.json"), "w") as f:
-                json.dump([dict(conf) for conf in study], f, indent=2)
-        except:
-            # Save single config
-            with open(os.path.join(self.output_path, "study.json"), "w") as f:
-                json.dump(dict(study), f, indent=2)
-        
 if __name__ == "__main__":
     pass

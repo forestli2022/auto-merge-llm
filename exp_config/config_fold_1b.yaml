@@ -1,0 +1,68 @@
+strategy: fold
+global_params:
+  random_seed: 0
+  cache_dir: "/gpfs/home/fl1123/code/auto-merge-llm/.cache"
+  # load_run_history: None
+  output_path: "/gpfs/home/fl1123/code/auto-merge-llm/output/fold_1b"
+  evaluation:
+    in_memory: true
+    vllm: false
+    enforce_eager: true
+    batch_size: 4
+    torch_dtype: float16
+    #num_fewshot: None
+    #limit: 10  # Limit the number of examples per task (for debug). 
+    device: "cuda"
+    include_path: ""
+    tasks:
+      - task: piqa
+        metric: "acc,none"
+        test_split: train
+      - task: wsc
+        metric: "acc,none"
+        test_split: train
+      - task: commonsense_qa
+        metric: "acc,none"
+        test_split: train
+      - task: mmlu
+        metric: "acc,none"
+        test_split: validation
+    final_evaluation_tasks:
+      - task: piqa
+        metric: "acc,none"
+        # test_split: validation
+
+      - task: wsc
+        metric: "acc,none"
+        # test_split: validation
+
+      - task: commonsense_qa
+        metric: "acc,none"
+        # test_split: validation
+
+      - task: boolq
+        metric: "acc,none"
+        # test_split: validation
+
+      - task: mmlu
+        metric: "acc,none"
+        # test_split: validation
+
+      - task: race
+        metric: "acc,none"
+        # test_split: test
+
+      - task: hellaswag
+        metric: "acc,none"
+        # test_split: validation
+
+      # - task: xsum
+      #   metric: "rouge1"
+      #   # test_split: validation
+strategies:
+  normal_models: !include normal_models.yaml
+  normal_slices: !include normal_slices.yaml
+  lfs: !include lfs.yaml
+  dis: !include dis.yaml
+  # prune: !include prune_1b.yaml
+  fold: !include fold_1b.yaml
