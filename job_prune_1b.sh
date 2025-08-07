@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -l walltime=08:00:00
+#PBS -l walltime=70:00:00
 #PBS -l select=1:ncpus=1:mem=128gb:ngpus=1:gpu_type=A100
 #PBS -j oe
 #PBS -o /gpfs/home/fl1123/code/auto-merge-llm/job_prune_1b_output.log

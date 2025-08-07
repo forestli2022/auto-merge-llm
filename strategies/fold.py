@@ -21,6 +21,7 @@ from ConfigSpace import (
     InCondition,
     Integer,
     NotEqualsCondition,
+    OrConjunction,
 )
 from ConfigSpace.conditions import EqualsCondition, GreaterThanCondition, InCondition
 from ConfigSpace.forbidden import ForbiddenAndConjunction, ForbiddenEqualsClause
@@ -358,7 +359,7 @@ class FoldMerge(MergeStrategy):
                         collapse_conditions.append(condition)
                     
                     if collapse_conditions:
-                        collapse_condition = AndConjunction(*collapse_conditions)
+                        collapse_condition = OrConjunction(*collapse_conditions)
                         cs.add_condition(collapse_condition)
                 
                 # Add merge collapse order parameter
@@ -382,7 +383,7 @@ class FoldMerge(MergeStrategy):
                         merge_collapse_order_conditions.append(condition)
                     
                     if merge_collapse_order_conditions:
-                        merge_collapse_order_condition = AndConjunction(*merge_collapse_order_conditions)
+                        merge_collapse_order_condition = OrConjunction(*merge_collapse_order_conditions)
                         cs.add_condition(merge_collapse_order_condition)
 
                 # Add output scale parameter

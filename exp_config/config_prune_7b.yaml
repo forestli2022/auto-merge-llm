@@ -8,7 +8,7 @@ global_params:
     in_memory: true
     vllm: true
     enforce_eager: true
-    batch_size: 4
+    batch_size: 32
     torch_dtype: float16
     #num_fewshot: None
     #limit: 10  # Limit the number of examples per task (for debug). 
