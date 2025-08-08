@@ -105,7 +105,7 @@ class FoldMerge(MergeStrategy):
             remove_indices = []
         
         slices = []
-        output_scales = []
+        # output_scales = []
         # From layer 0 to layer num_hidden_layers-1
         for layer_idx in range(self.candidate_layers):
             
@@ -114,8 +114,8 @@ class FoldMerge(MergeStrategy):
                 "layer_range": [layer_idx, layer_idx + 1]
             }
             
-            layer_scale = config.get(f'layer_{layer_idx}_output_scale', 1)
-            output_scales.append(layer_scale)
+            # layer_scale = config.get(f'layer_{layer_idx}_output_scale', 1)
+            # output_scales.append(layer_scale)
             
             candidate_layer = []
             for cand_idx, model in enumerate(self.models):
@@ -204,7 +204,7 @@ class FoldMerge(MergeStrategy):
             slices=slices, 
             model_storage_path=self.output_path,
             in_memory=self.in_memory_evaluate,
-            output_scales=output_scales
+            output_scales=None
         )
         merge_utils.fold_slices()
         try:
@@ -289,22 +289,6 @@ class FoldMerge(MergeStrategy):
                     default_value=1 if cand_idx == 0 else 0  
                 )
                 cs.add_hyperparameter(candidate_param)
-
-                # Add conditions for layer removal
-                # if remove_count!=0:
-                #     candidate_conditions = []
-                #     for i in range(remove_count):
-                #         remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                #         condition = NotEqualsCondition(
-                #             candidate_param,  
-                #             remove_idx_param,   
-                #             layer_idx           
-                #         )
-                #         candidate_conditions.append(condition)
-                
-                #     if candidate_conditions:
-                #         candidate_condition = AndConjunction(*candidate_conditions)
-                #         cs.add_condition(candidate_condition)
             
             # Add merging method parameters
             method_config = self.merging_method["task_arithmetic"]
@@ -320,21 +304,6 @@ class FoldMerge(MergeStrategy):
                 default_value=1.0
             )
             cs.add_hyperparameter(scale_factor_param)
-            
-            # Add conditions
-            # if remove_count!=0:
-            #     merge_method_conditions = []
-            #     for i in range(remove_count):
-            #         remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-            #         condition = NotEqualsCondition(
-            #             scale_factor_param,  
-            #             remove_idx_param,   
-            #             layer_idx           
-            #         )
-            #         merge_method_conditions.append(condition)
-            #     if merge_method_conditions:
-            #             merge_method_condition = AndConjunction(*merge_method_conditions)
-            #             cs.add_condition(merge_method_condition)    
             
             # Add collapse scale factor parameter
             if layer_idx != 0:
@@ -386,30 +355,30 @@ class FoldMerge(MergeStrategy):
                         merge_collapse_order_condition = OrConjunction(*merge_collapse_order_conditions)
                         cs.add_condition(merge_collapse_order_condition)
 
-                # Add output scale parameter
-                output_scale_param = UniformFloatHyperparameter(
-                    f'layer_{layer_idx}_output_scale', 
-                    lower=0, 
-                    upper=2.0, 
-                    default_value=1.0
-                )
-                cs.add_hyperparameter(output_scale_param)
+            # # Add output scale parameter
+            # output_scale_param = UniformFloatHyperparameter(
+            #     f'layer_{layer_idx}_output_scale', 
+            #     lower=0, 
+            #     upper=2.0, 
+            #     default_value=1.0
+            # )
+            # cs.add_hyperparameter(output_scale_param)
+            
+            # # Add conditions
+            # if remove_count!=0:
+            #     output_scale_conditions = []
+            #     for i in range(remove_count):
+            #         remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
+            #         condition = NotEqualsCondition(
+            #             output_scale_param,  
+            #             remove_idx_param,   
+            #             layer_idx            
+            #         )
+            #         output_scale_conditions.append(condition)
                 
-                # Add conditions
-                if remove_count!=0:
-                    output_scale_conditions = []
-                    for i in range(remove_count):
-                        remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                        condition = NotEqualsCondition(
-                            output_scale_param,  
-                            remove_idx_param,   
-                            layer_idx            
-                        )
-                        output_scale_conditions.append(condition)
-                    
-                    if output_scale_conditions:
-                        output_scale_condition = AndConjunction(*output_scale_conditions)
-                        cs.add_condition(output_scale_condition)
+            #     if output_scale_conditions:
+            #         output_scale_condition = AndConjunction(*output_scale_conditions)
+            #         cs.add_condition(output_scale_condition)
 
         return cs 
 
@@ -499,8 +468,8 @@ class FoldMerge(MergeStrategy):
                     config_dict[f'remove_idx_{i}'] = idx
                     
             for layer_idx in range(total_layers):
-                if layer_idx != 0:
-                    config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
+                # if layer_idx != 0:
+                #     config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
                 config_dict[f'layer_{layer_idx}_merge_scale_factor'] = 1.0
                 
                 # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
@@ -524,8 +493,8 @@ class FoldMerge(MergeStrategy):
                             config_dict[f'remove_idx_{i}'] = idx
                             
                     for layer_idx in range(total_layers):
-                        if layer_idx != 0:
-                            config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
+                        # if layer_idx != 0:
+                        #     config_dict[f'layer_{layer_idx}_output_scale'] = 1.0
                         config_dict[f'layer_{layer_idx}_merge_scale_factor'] = merge_scale
 
                         # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
@@ -634,6 +603,7 @@ class FoldMerge(MergeStrategy):
 
         for i in range(len(incumbent)):
             current_result_path = os.path.join(self.output_path, str(i))
+            os.makedirs(current_result_path, exist_ok=True)
             logger.info(f"Evaluating incumbent {i}...")
             # Evaluate the incumbent configuration
             eval_result = self.eval_config(incumbent[i], i, path=current_result_path)

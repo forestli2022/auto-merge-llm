@@ -21,3 +21,6 @@ pip list
 
 # Run your script
 python3 merge.py --config ./exp_config/config_fold_7b.yaml
+
+# Calculate average
+python3 calculate_avg.py --output_path ./output/fold_7b

@@ -20,3 +20,6 @@ conda info --envs
 
 # Run your script
 python3 merge.py --config ./exp_config/config_prune_1b.yaml
+
+# Calculate average
+python3 calculate_avg.py --output_path ./output/prune_1b

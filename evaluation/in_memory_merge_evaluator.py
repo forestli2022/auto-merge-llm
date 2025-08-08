@@ -92,7 +92,7 @@ class InMemoryMergeEvaluator(MergeActorBase):
         with tempfile.TemporaryDirectory(
                 dir=self.model_storage_path, prefix="vllm"
             ) as tempdir:
-            self.inner_model.cpu().save_pretrained(
+            self.inner_model.save_pretrained(
                 tempdir, safe_serialization=True, out_shard_size=1_000_000_000_000
             )
             tokenizer.save_pretrained(tempdir)
@@ -271,20 +271,11 @@ class InMemoryMergeEvaluator(MergeActorBase):
                 }
                 #if self.is_flash_attn_2_available:
                 #    model_kwargs["attn_implementation"] = "flash_attention_2"
-
-                with torch.device("meta"):
-                    self.inner_model = transformers.AutoModelForCausalLM.from_config(
-                        current_arch_info,
-                        **model_kwargs,
-                    )
-                self.inner_model = torch.nn.Module.to_empty(self.inner_model, device=torch.device("cpu"))
-                self.inner_model = self.inner_model.to("cpu").eval().requires_grad_(False)
-
-                gpu_memory = self._get_gpu_memory_usage()
-                if gpu_memory:
-                    logger.error("Start eval: Current GPU memory usage:")
-                    for gpu, memory in gpu_memory.items():
-                        logger.error(f"{gpu}: Allocated: {memory['allocated']}, Reserved: {memory['reserved']}")
+                
+                self.inner_model = transformers.AutoModelForCausalLM.from_config(
+                    current_arch_info,
+                    **model_kwargs,
+                )
                 
                 if selected_dtype == torch.bfloat16:
                     self.inner_model = self.inner_model.bfloat16()
@@ -293,7 +284,7 @@ class InMemoryMergeEvaluator(MergeActorBase):
                 elif selected_dtype == torch.float32:
                     self.inner_model = self.inner_model.float()
                 
-                # self.inner_model = self.inner_model.eval().requires_grad_(False)
+                self.inner_model = self.inner_model.eval().requires_grad_(False)
                 
                 if self.vllm:
                     self._get_max_model_len(current_arch_info)
@@ -347,13 +338,13 @@ class InMemoryMergeEvaluator(MergeActorBase):
             if "rotary_emb.inv_freq" in tensor_name:
                 continue
             if tensor_name in param_dict:
-                if tensor_name in ["model.embed_tokens.weight", "lm_head.weight", "embed_tokens"]:
+                if tensor_name in ["model.embed_tokens.weight", "lm_head.weight"]:
                     param_tensor = param_dict[tensor_name].data
+                    value_tensor = value 
                     padded_value = torch.zeros_like(param_tensor)
-                    padded_value[:value.shape[0], :] = value.to(param_tensor.dtype)
+                    padded_value[:value.shape[0], :] = value_tensor
                     param_tensor.copy_(padded_value, non_blocking=True)
                 else:
-                    value = value.to(param_dict[tensor_name].dtype)
                     param_dict[tensor_name].data.copy_(value, non_blocking=True)
             elif self.vllm:
                 stacked = False
@@ -372,11 +363,6 @@ class InMemoryMergeEvaluator(MergeActorBase):
                 raise ValueError(f"Unknown parameter {tensor_name}")
 
             del value
-        
-        del out_tensors
-        torch.cuda.empty_cache()
-        gc.collect()
-        logger.info(f"Peak memory: {torch.cuda.max_memory_allocated() // (1024**2)} MB")
         
         return eval_model(
             self.model,

@@ -543,12 +543,13 @@ class MergeUtils:
 
         self._merge_postweights()
 
+        logger.info("_out_tensors after folding:")
+        logger.info(self._out_tensors.keys())
         # Need to fix the tensor names and remove redundant tensors after collapsing
         index_map = {} # map to track the new indices of layers
         new_idx = 0
         # e.g. if we have 3 layers and the second layer is collapsed, we will have a mapping like {0: 0, 2: 1}
         for old_idx, slice in enumerate(self.slices):
-            print(f"Processing slice {old_idx}")
             if "collapsing_method" in slice.keys():
                 # This slice is removed -> no new index
                 continue
@@ -569,6 +570,8 @@ class MergeUtils:
                 new_tensors[name] = tensor     # embeddings, lm_head, etc.
         self._out_tensors = new_tensors
         self._output_config.num_hidden_layers = len(set(index_map.values()))
+        logger.info("_out_tensors after layer index updating:")
+        logger.info(self._out_tensors.keys())
 
         # Log the final number of layers, which layers are collapsed
         logger.info(f"Final number of layers: {self._output_config.num_hidden_layers}")
