@@ -1,12 +1,12 @@
-strategy: prune
+strategy: fold_different_params_1b
 global_params:
   random_seed: 0
-  cache_dir: "/rds/general/user/fl1123/ephemeral/.cache"
+  cache_dir: "/gpfs/home/fl1123/code/auto-merge-llm/.cache"
   # load_run_history: None
-  output_path: "/rds/general/user/fl1123/home/code/auto-merge-llm/output/prune_7b"
+  output_path: "/gpfs/home/fl1123/code/auto-merge-llm/output/fold_different_params_1b"
   evaluation:
     in_memory: true
-    vllm: true
+    vllm: false
     enforce_eager: true
     batch_size: 16
     torch_dtype: float16
@@ -15,12 +15,6 @@ global_params:
     device: "cuda"
     include_path: ""
     tasks:
-      # - task: mmlu
-      #   metric: "acc,none"
-      #   test_split: validation
-      # - task: wsc_custom
-      #   metric: "acc,none"
-      #   test_split: train
       - task: piqa
         metric: "acc,none"
         test_split: train
@@ -70,4 +64,6 @@ strategies:
   normal_slices: !include normal_slices.yaml
   lfs: !include lfs.yaml
   dis: !include dis.yaml
-  prune: !include prune_7b.yaml
+  # prune: !include prune_1b.yaml
+  # fold: !include fold_1b.yaml
+  fold_different_params_1b: !include fold_1b.yaml

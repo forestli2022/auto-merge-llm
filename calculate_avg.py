@@ -1,8 +1,9 @@
 import os
 import json
 
+BENCHMARKS = ["boolq", "commonsense_qa", "hellaswag", "mmlu", "piqa", "race", "wsc"]
+
 def main(output_path):
-    print("hello")
     # Calculate the average of each configuration's evaluation results
     # first search for directory named with number stored under the output path
     if not os.path.exists(output_path):
@@ -24,7 +25,8 @@ def main(output_path):
             data = json.load(f) # data is a dictionary
             total = 0
             total_star = 0
-            for key, value in data.items():
+            for key in BENCHMARKS:
+                value = data[key]
                 score_key = "score" if "score" in value else "acc,none"
                 total += value[score_key]
                 # If key contains ["mmlu", "wsc", "piqa", "commonsense_qa"], do not add it to avg_star
@@ -34,10 +36,13 @@ def main(output_path):
         
         # Calculate averages
         averages[idx] = {}
-        averages[idx]["avg"] = total / len(data)
-        averages[idx]["avg*"] = total_star / (unused_data_count if unused_data_count > 0 else len(data))
+        averages[idx]["avg"] = total / len(BENCHMARKS)
+        averages[idx]["avg*"] = total_star / (unused_data_count if unused_data_count > 0 else len(BENCHMARKS))
         
-        # Store the averages in a JSON file
+    # Sort the dictionary with indexes as keys
+    averages = dict(sorted(averages.items(), key=lambda item: int(item[0])))
+
+    # Store the averages in a JSON file
     with open(os.path.join(output_path, "averages.json"), "w") as f:
         print(f"Writing averages to {os.path.join(output_path, 'averages.json')}")
         json.dump(averages, f, indent=2)

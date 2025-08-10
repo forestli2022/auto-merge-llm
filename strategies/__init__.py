@@ -6,6 +6,7 @@ from .lfs_multiobj import LfsMoMerge
 from .prune import PruneMoMerge
 from .fold import FoldMerge
 from .fold_merge_once import FoldMergeOnce
+from .fold_different_params import FoldDifferentParams
 from .merge_utils import MergeUtils
 
 strategy_classes = {
@@ -17,4 +18,5 @@ strategy_classes = {
     'prune': PruneMoMerge,
     'fold': FoldMerge,
     'fold_merge_once': FoldMergeOnce,
+    'fold_different_params': FoldDifferentParams,
 }

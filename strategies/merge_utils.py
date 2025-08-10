@@ -510,7 +510,7 @@ class MergeUtils:
             if cur_slice["to_collapse"]:
                 logger.info(f"Layer {idx} will be collapsed to anchor layer {last_anchor_idx}")
                 layer_idx_to_collapse.append(idx)
-                if idx == len(self.slices) - 1 or self.slices[idx + 1]["to_collapse"]:
+                if idx == len(self.slices) - 1 or not self.slices[idx + 1]["to_collapse"]:
                     # Collapse all the layer indices to last anchor layer
                     logger.info(f"Collapsing layers {layer_idx_to_collapse} to anchor layer {last_anchor_idx}")
                     
@@ -545,13 +545,87 @@ class MergeUtils:
         
         self._merge_postweights()
 
-        self._correct_out_tensor_names(i for i in range(len(self.slices)) if not self.slices[i]["to_collapse"])
+        self._correct_out_tensor_names([i for i in range(len(self.slices)) if not self.slices[i]["to_collapse"]])
 
         self._update_output_config()
     
         if not self.in_memory:
             self._finalize_model()
+
+    def merge_slices(self):
+        self._pre_cache()
+        self._build_tokenizer_and_embed()
+        for cur_slice in self.slices:
+            self._merge_slice(cur_slice)
+        self._merge_postweights()
+        self._update_output_config()
+    
+        if not self.in_memory:
+            self._finalize_model()
+
+    def fold_different_params(self):
+        """
+        First merge all the expert model layers
+        Then fold the slices by merging with the closest anchor layer before it
+        This method is used for collapsing slices with different weights
+        """
+        logger.info("Start folding and merging slices...")
+        logger.info(f"Current slices: {self.slices}")
+        self._pre_cache()
+        self._build_tokenizer_and_embed()
         
+        # Merge all the slices first
+        for cur_slice in self.slices:
+            self._merge_slice(cur_slice)
+        
+        # Fold slice once
+        last_anchor_idx = -1
+        layer_idx_to_collapse = []
+        layer_collapse_scales = []
+        for idx in range(len(self.slices)):
+            cur_slice = self.slices[idx]
+            if "collapse_scale" in cur_slice.keys():
+                logger.info(f"Layer {idx} will be collapsed to anchor layer {last_anchor_idx}")
+                layer_idx_to_collapse.append(idx)
+                layer_collapse_scales.append(cur_slice["collapse_scale"])
+                if idx == len(self.slices) - 1 or "collapse_scale" not in self.slices[idx + 1].keys():
+                    # Collapse all the layer indices to last anchor layer
+                    logger.info(f"Collapsing layers {layer_idx_to_collapse} to anchor layer {last_anchor_idx}, with scales {layer_collapse_scales}")
+                    
+                    anchor_weight_names = self._get_matches_weight_names(f"layers.{last_anchor_idx}", match_layer=True)
+                    for anchor_weight_name in anchor_weight_names:
+                        base_tensor = self.base_model_cache.get_tensor(anchor_weight_name) if self.base_model else None
+                        cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
+                        
+                        donor_tensors = [self.out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
+                        self._merge_tensor(
+                            anchor_weight_name, 
+                            base_tensor, 
+                            donor_tensors, 
+                            "weighted_task_vectors", 
+                            layer_collapse_scales
+                        )
+                    # Delete collased layers from _out_tensor
+                    for layer_idx in layer_idx_to_collapse:
+                        cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
+                        for cur_weight_name in cur_weight_names:
+                            self._out_tensors.pop(cur_weight_name, None)
+
+                    last_anchor_idx = -1
+                    layer_idx_to_collapse = []
+                    layer_collapse_scales = []
+                        
+            else:
+                # Anchor layer
+                last_anchor_idx = idx
+        
+        self._merge_postweights()
+
+        self._correct_out_tensor_names([i for i in range(len(self.slices)) if "collapse_scale" not in self.slices[i].keys()])
+        self._update_output_config()
+    
+        if not self.in_memory:
+            self._finalize_model()
 
     def fold_slices(self):
         logger.info("Start folding slices...")

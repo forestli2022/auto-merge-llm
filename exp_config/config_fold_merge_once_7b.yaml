@@ -1,9 +1,9 @@
 strategy: fold_merge_once
 global_params:
   random_seed: 0
-  cache_dir: "/gpfs/home/fl1123/code/auto-merge-llm/.cache"
+  cache_dir: "/rds/general/user/fl1123/ephemeral/.cache"
   # load_run_history: None
-  output_path: "/gpfs/home/fl1123/code/auto-merge-llm/output/fold_merge_once_7b"
+  output_path: "/rds/general/user/fl1123/home/code/auto-merge-llm/output/fold_merge_once_7b"
   evaluation:
     in_memory: true
     vllm: true

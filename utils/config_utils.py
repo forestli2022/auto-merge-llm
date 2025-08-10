@@ -88,7 +88,9 @@ def load_and_validate_config(config_file_path):
 
 def validate_config(config):
     required_keys = ['strategy']
-    valid_strategies = ['normal_models', 'normal_slices', 'lfs', 'dis', 'lfs_multiobj', 'prune', 'fold']
+    # TODO: Fold with different collapse weights
+    valid_strategies = ['normal_models', 'normal_slices', 'lfs', 'dis', 'lfs_multiobj', 'prune', 'fold', 'fold_merge_once', 
+    'fold_different_params']
 
     for key in required_keys:
         if key not in config:
