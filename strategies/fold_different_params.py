@@ -420,7 +420,7 @@ class FoldDifferentParams(MergeStrategy):
                 
                 # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
                 if layer_idx in remove_list:
-                    config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 1.0
+                    config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.3
 
                 for cand_idx in range(self.candidates_per_layer):
                     config_dict[f'layer_{layer_idx}_candidate_{cand_idx}'] = 0

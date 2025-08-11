@@ -1,4 +1,4 @@
-strategy: fold_different_params_7b
+strategy: fold_different_params
 global_params:
   random_seed: 0
   cache_dir: "/rds/general/user/fl1123/ephemeral/.cache"
@@ -66,5 +66,4 @@ strategies:
   dis: !include dis.yaml
   # prune: !include prune_7b.yaml
   # fold: !include fold_7b.yaml
-  # fold_merge_once: !include fold_merge_once_7b.yaml
-  fold_different_params_7b: !include fold_7b.yaml
+  fold_different_params: !include fold_7b.yaml

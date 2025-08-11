@@ -1,4 +1,4 @@
-strategy: fold_different_params_1b
+strategy: fold_different_params
 global_params:
   random_seed: 0
   cache_dir: "/gpfs/home/fl1123/code/auto-merge-llm/.cache"
@@ -66,4 +66,4 @@ strategies:
   dis: !include dis.yaml
   # prune: !include prune_1b.yaml
   # fold: !include fold_1b.yaml
-  fold_different_params_1b: !include fold_1b.yaml
+  fold_different_params: !include fold_1b.yaml
