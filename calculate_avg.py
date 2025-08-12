@@ -19,10 +19,20 @@ def main(output_path):
 
         # Read the evaluation results from evaluation result {i}.json
         result_path = os.path.join(index_path, f"evaluation result {idx}.json")
+        if os.path.exists(result_path) is False:
+            continue
 
         unused_data_count = 0
         with open(result_path, "r") as f:
             data = json.load(f) # data is a dictionary
+            # Check each benchmark key is present
+            can_calculate = True
+            for key in BENCHMARKS:
+                if key not in data.keys():
+                    can_calculate = False
+            if not can_calculate:
+                continue
+
             total = 0
             total_star = 0
             for key in BENCHMARKS:
