@@ -3,12 +3,12 @@ global_params:
   random_seed: 0
   cache_dir: "/mnt/ccnas2/tdp/fl1123/.cache/auto-merge-llm-cache"
   # load_run_history: None
-  output_path: "/mnt/ccnas2/bdp/fl1123/code/auto-merge-llm/output"
+  output_path: "/mnt/ccnas2/bdp/fl1123/code/auto-merge-llm/output/fold_different_params_1b"
   evaluation:
-    in_memory: true
+    in_memory: false
     vllm: false
     enforce_eager: true
-    batch_size: 16
+    batch_size: 4
     torch_dtype: float16
     #num_fewshot: None
     #limit: 10  # Limit the number of examples per task (for debug). 

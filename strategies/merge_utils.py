@@ -9,6 +9,8 @@ from loader import TensorLoader, TensorWriter
 from methods import merging_methods_dict
 from tokenizer import align_tokenizers_and_embeddings_v1
 from utils import get_model_storage_path, logger
+import torch
+from torch import nn
 
 
 class MergeUtils:
@@ -516,7 +518,7 @@ class MergeUtils:
                     
                     anchor_weight_names = self._get_matches_weight_names(f"layers.{last_anchor_idx}", match_layer=True)
                     for anchor_weight_name in anchor_weight_names:
-                        base_tensor = self.base_model_cache.get_tensor(anchor_weight_name) if self.base_model else None
+                        base_tensor = self._out_tensors[anchor_weight_name]
                         cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
                         
                         donor_tensors = [self.out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
@@ -594,7 +596,7 @@ class MergeUtils:
                     
                     anchor_weight_names = self._get_matches_weight_names(f"layers.{last_anchor_idx}", match_layer=True)
                     for anchor_weight_name in anchor_weight_names:
-                        base_tensor = self.base_model_cache.get_tensor(anchor_weight_name) if self.base_model else None
+                        base_tensor = self._out_tensors[anchor_weight_name]
                         cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
                         
                         donor_tensors = [self.out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
@@ -644,43 +646,57 @@ class MergeUtils:
         # Fold slice once
         last_anchor_idx = -1
         layer_idx_to_collapse = []
-        layer_collapse_scales = []
+        clusters = {} # cluster of layers, key is the index of anchor layer, value is a list of following layers to collapse
         for idx in range(len(self.slices)):
             cur_slice = self.slices[idx]
             if cur_slice["to_collapse"]:
-                logger.info(f"Layer {idx} will be collapsed to anchor layer {last_anchor_idx}")
                 layer_idx_to_collapse.append(idx)
                 if idx == len(self.slices) - 1 or not cur_slice["to_collapse"]:
                     # Collapse all the layer indices to last anchor layer
-                    logger.info(f"Collapsing layers {layer_idx_to_collapse} to anchor layer {last_anchor_idx}")
-                    
-                    anchor_weight_names = self._get_matches_weight_names(f"layers.{last_anchor_idx}", match_layer=True)
-                    for anchor_weight_name in anchor_weight_names:
-                        base_tensor = self.base_model_cache.get_tensor(anchor_weight_name) if self.base_model else None
-                        cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
-                        
-                        donor_tensors = [self.out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
-                        self._merge_tensor(
-                            anchor_weight_name, 
-                            base_tensor, 
-                            donor_tensors, 
-                            "weighted_task_vectors", 
-                            layer_collapse_scales
-                        )
-                    # Delete collased layers from _out_tensor
-                    for layer_idx in layer_idx_to_collapse:
-                        cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
-                        for cur_weight_name in cur_weight_names:
-                            self._out_tensors.pop(cur_weight_name, None)
+                    logger.info(f"Layers {layer_idx_to_collapse} will be collapsed to anchor layer {last_anchor_idx}")
+                    clusters[last_anchor_idx] = layer_idx_to_collapse
 
                     last_anchor_idx = -1
                     layer_idx_to_collapse = []
-                    layer_collapse_scales = []
                         
             else:
                 # Anchor layer
                 last_anchor_idx = idx
+
+        # Initialization for adamerging
+        for key, value in self._out_tensors.items():
+            logger.info(f"Weight {key}, requires grad: {value.requires_grad}")
+            value.requires_grad_(False)
+
+        # Build parameter for collapsing
+        collapse_weight_dict = nn.ParameterDict()
+        for anchor_idx, layer_indices in clusters.items():
+            # parameters are initially set to 0.1, length of layer_indices
+            collapse_weight_dict[anchor_idx] = nn.Parameter(torch.full((len(layer_indices),), 0.1))
         
+        # Adamerging loop
+        for iteration in range(500):
+            logger.info(f"Iteration {iteration + 1} of adamerging...")
+            for anchor_idx, layer_indices in clusters.items():
+                anchor_weight_names = self._get_matches_weight_names(f"layers.{anchor_idx}", match_layer=True)
+                for anchor_weight_name in anchor_weight_names:
+                    base_tensor = self._out_tensors[anchor_weight_name]
+                    cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
+                    
+                    donor_tensors = [self.out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
+                    self._merge_tensor(
+                        anchor_weight_name, 
+                        base_tensor, 
+                        donor_tensors, 
+                        "weighted_task_vectors", 
+                        collapse_weight_dict[anchor_idx]
+                    )
+                # Delete collased layers from _out_tensor
+                for layer_idx in layer_idx_to_collapse:
+                    cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
+                    for cur_weight_name in cur_weight_names:
+                        self._out_tensors.pop(cur_weight_name, None)
+
         self._merge_postweights()
 
         self._correct_out_tensor_names([i for i in range(len(self.slices)) if "collapse_scale" not in self.slices[i].keys()])
