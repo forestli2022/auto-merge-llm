@@ -56,7 +56,7 @@ SUPPORTED_METHOD_PARAM_MAPS = {
 }
 
 
-class FoldMergeOnce(MergeStrategy):
+class FoldAdamerging(MergeStrategy):
     def __init__(self, config):
         super().__init__(config) 
         logger.info(f"config : {self.config}")
@@ -123,8 +123,6 @@ class FoldMergeOnce(MergeStrategy):
                     candidate_layer.append(model)
             
             merge_scale = config.get(f'layer_{layer_idx}_merge_scale_factor', 1)
-            if (layer_idx not in remove_indices) and (layer_idx != self.num_hidden_layers - 1) and (layer_idx + 1 in remove_indices):
-                collapse_scale = config.get(f'layer_{layer_idx}_collapse_scale_factor', 1.0)
             
             if len(candidate_layer) == 0:
                 slice_dict = {
@@ -178,13 +176,6 @@ class FoldMergeOnce(MergeStrategy):
             else:
                 slice_dict["to_collapse"] = False
 
-            # Add collapse scale factor
-            if (layer_idx not in remove_indices) and (layer_idx != self.num_hidden_layers - 1) and (layer_idx + 1 in remove_indices):
-                slice_dict["collapsing_method"] = {
-                    "task_arithmetic": {
-                        "scaling_coefficient": [{"value": collapse_scale}]
-                    }
-                }
             slices.append(slice_dict)
         
         return slices, None  
@@ -209,7 +200,7 @@ class FoldMergeOnce(MergeStrategy):
             in_memory=self.in_memory_evaluate,
             output_scales=None
         )
-        merge_utils.fold_merge_once()
+        merge_utils.fold_ada()
         try:
             if self.in_memory_evaluate:
                 out_tensors = merge_utils.out_tensors
@@ -308,46 +299,6 @@ class FoldMergeOnce(MergeStrategy):
             )
             cs.add_hyperparameter(scale_factor_param)
             
-            # Add collapse scale factor parameter
-            # Different from folding, collapse_scale_param only exists for layers that are NOT removed, and has layer immediately after it being a collapsed layer, i.e. all collapsed layers are uniformly merged to the anchor layer
-            if layer_idx != self.num_hidden_layers - 1:
-                collapse_scale_param = UniformFloatHyperparameter(
-                    f'layer_{layer_idx}_collapse_scale_factor', 
-                    lower=min_value, 
-                    upper=max_value, 
-                    default_value=1.0
-                )
-                cs.add_hyperparameter(collapse_scale_param)
-
-                # Add conditions
-                if remove_count!=0:
-                    collapse_conditions = []
-                    anchor_conditions = []
-                    for i in range(remove_count):
-                        remove_idx_param = cs.get_hyperparameter(f'remove_idx_{i}')
-                        if layer_idx != 0:
-                            condition = NotEqualsCondition(
-                                collapse_scale_param,  
-                                remove_idx_param,   
-                                layer_idx            
-                            )
-                            collapse_conditions.append(condition)
-                        
-                        condition = EqualsCondition(
-                            collapse_scale_param,
-                            remove_idx_param,
-                            layer_idx + 1,
-                        )
-                        anchor_conditions.append(condition)
-                    
-                    # Combine conditions
-                    if collapse_conditions and anchor_conditions:
-                        condition = AndConjunction(AndConjunction(*collapse_conditions), OrConjunction(*anchor_conditions))
-                        cs.add_condition(condition)
-                    elif anchor_conditions and layer_idx == 0:
-                        condition = OrConjunction(*anchor_conditions)
-                        cs.add_condition(condition)
-
         return cs
 
 
@@ -438,10 +389,6 @@ class FoldMergeOnce(MergeStrategy):
             for layer_idx in range(total_layers):
                 config_dict[f'layer_{layer_idx}_merge_scale_factor'] = 1.0
 
-                # For each anchor layer, set the collapse scale factor
-                if (layer_idx not in remove_list) and (layer_idx != self.num_hidden_layers - 1) and (layer_idx + 1 in remove_list):
-                    config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.3
-
                 for cand_idx in range(self.candidates_per_layer):
                     config_dict[f'layer_{layer_idx}_candidate_{cand_idx}'] = 0
                         
@@ -459,10 +406,6 @@ class FoldMergeOnce(MergeStrategy):
                     for layer_idx in range(total_layers):
                         config_dict[f'layer_{layer_idx}_merge_scale_factor'] = merge_scale
 
-                        # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
-                        if (layer_idx not in remove_list) and (layer_idx != self.num_hidden_layers - 1) and (layer_idx + 1 in remove_list):
-                            config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.3
-                        
                         for cand_idx in range(self.candidates_per_layer):
                             config_dict[f'layer_{layer_idx}_candidate_{cand_idx}'] = candidate_pattern[cand_idx]
                                 
@@ -611,7 +554,7 @@ class FoldMergeOnce(MergeStrategy):
             in_memory=self.in_memory_evaluate,
             output_scales=output_scales
         )
-        merge_utils.fold_merge_once()
+        merge_utils.fold_ada()
 
         try:
             # Construct new config with full eval tasks

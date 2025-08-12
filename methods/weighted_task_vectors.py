@@ -59,9 +59,7 @@ class WeightedTaskVectors(MergeMethod):
         mask_merging=None,
         tensor_name="default"
     ):
-        scaling_coefficient = method_params["scaling_coefficient"]
-        assert isinstance(scaling_coefficient, float), \
-            "wrong type of scaling_coefficient, should be float!"
+        scaling_coefficients = method_params
         base_tensor_dict = {tensor_name: base_tensor}
         models_to_merge_task_vectors = [
             TaskVector(
@@ -73,14 +71,14 @@ class WeightedTaskVectors(MergeMethod):
         ]
         with torch.no_grad():
             # sum up the task vectors
-            merged_task_vector = models_to_merge_task_vectors[0] + \
-                models_to_merge_task_vectors[1]
+            merged_task_vector = models_to_merge_task_vectors[0] * scaling_coefficients[0] + \
+                models_to_merge_task_vectors[1] * scaling_coefficients[1]
             for index in range(2, len(models_to_merge_task_vectors)):
                 merged_task_vector = merged_task_vector + \
-                    models_to_merge_task_vectors[index]
-            
+                    models_to_merge_task_vectors[index] * scaling_coefficients[index]
+
             merged_params = merged_task_vector.combine_with_base_tensor(
                 base_tensor=base_tensor_dict,
-                scaling_coefficient=scaling_coefficient
+                scaling_coefficient=1.0
             )
         return merged_params[tensor_name]
