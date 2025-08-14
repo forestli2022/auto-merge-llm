@@ -1,4 +1,5 @@
 import os
+import time
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -24,15 +25,24 @@ def eval_model(model, tasks, model_args=None, task_manager=None, **kwargs):
     logger.info(task_manager)
     logger.info(kwargs)
 
-    results = lm_eval.evaluator.simple_evaluate(
-        model=model,
-        model_args=model_args,
-        tasks=[{k: v for k, v in task.items() if k not in ["metric", "limit"]} for task in tasks], 
-        log_samples=True, # for debug
-        verbosity="DEBUG",
-        task_manager=task_manager,
-        **kwargs,
-    )
+    results = None
+    while results is None:
+        try:
+            results = lm_eval.evaluator.simple_evaluate(
+                model=model,
+                model_args=model_args,
+                tasks=[{k: v for k, v in task.items() if k not in ["metric", "limit"]} for task in tasks], 
+                log_samples=True, # for debug
+                verbosity="DEBUG",
+                task_manager=task_manager,
+                **kwargs,
+            )
+        except Exception as e:
+            logger.error(f"Exception during evaluation: {e}")
+            results = None
+            # Sleep for a while
+            time.sleep(10)
+
     for task in tasks:
         results["results"][task['task']]['score'] = results["results"][task['task']][task['metric']]
     logger.info(f"Evaluation results: {results['results']}")

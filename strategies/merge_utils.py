@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union, Any
 
 from transformers import AutoTokenizer, AutoConfig
 
+from evaluation.ada_in_memory import get_entropy
 from loader import TensorLoader, TensorWriter
 from methods import merging_methods_dict
 from tokenizer import align_tokenizers_and_embeddings_v1
@@ -643,7 +644,10 @@ class MergeUtils:
         for cur_slice in self.slices:
             self._merge_slice(cur_slice)
         
-        # Fold slice once
+        # Make a copy of _out_tensor, for adamerging
+        _out_tensor_copy = {k: v.detach().clone() for k, v in self._out_tensors.items()}
+
+        # Collect collapsing layers
         last_anchor_idx = -1
         layer_idx_to_collapse = []
         clusters = {} # cluster of layers, key is the index of anchor layer, value is a list of following layers to collapse
@@ -651,7 +655,7 @@ class MergeUtils:
             cur_slice = self.slices[idx]
             if cur_slice["to_collapse"]:
                 layer_idx_to_collapse.append(idx)
-                if idx == len(self.slices) - 1 or not cur_slice["to_collapse"]:
+                if idx == len(self.slices) - 1 or not self.slices[idx + 1]["to_collapse"]:
                     # Collapse all the layer indices to last anchor layer
                     logger.info(f"Layers {layer_idx_to_collapse} will be collapsed to anchor layer {last_anchor_idx}")
                     clusters[last_anchor_idx] = layer_idx_to_collapse
@@ -663,47 +667,94 @@ class MergeUtils:
                 # Anchor layer
                 last_anchor_idx = idx
 
-        # Initialization for adamerging
-        for key, value in self._out_tensors.items():
-            logger.info(f"Weight {key}, requires grad: {value.requires_grad}")
-            value.requires_grad_(False)
-
         # Build parameter for collapsing
-        collapse_weight_dict = nn.ParameterDict()
+        collapse_weight_dict = nn.ParameterDict() # key: anchor layer. # value: collapsing layer scale factors
         for anchor_idx, layer_indices in clusters.items():
             # parameters are initially set to 0.1, length of layer_indices
-            collapse_weight_dict[anchor_idx] = nn.Parameter(torch.full((len(layer_indices),), 0.1))
+            collapse_weight_dict[str(anchor_idx)] = nn.Parameter(torch.full((len(layer_indices),), 0.1))
         
+        for name, p in collapse_weight_dict.items():
+            logger.info(f"  {name}: shape={tuple(p.shape)}, numel={p.numel()}, requires_grad={p.requires_grad}")
+        # Initialize special adamegring evaluator
+        optimizer = torch.optim.Adam(collapse_weight_dict.parameters(), lr=1e-3)
+
         # Adamerging loop
-        for iteration in range(500):
+        logger.info("Starting adamerging optimization...")
+        for iteration in range(10):
+            # Set self._out_tensor to the copy
+            self._out_tensors = {k: v.detach().clone() for k, v in _out_tensor_copy.items()}
+            # Set _out_tensors parameter to require gradient
+            for value in self._out_tensors.values():
+                value.requires_grad_(True)
+
             logger.info(f"Iteration {iteration + 1} of adamerging...")
             for anchor_idx, layer_indices in clusters.items():
                 anchor_weight_names = self._get_matches_weight_names(f"layers.{anchor_idx}", match_layer=True)
                 for anchor_weight_name in anchor_weight_names:
                     base_tensor = self._out_tensors[anchor_weight_name]
-                    cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
+                    cur_weight_names = [anchor_weight_name.replace(f"layers.{anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_indices]
                     
-                    donor_tensors = [self.out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
+                    donor_tensors = [self._out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
                     self._merge_tensor(
                         anchor_weight_name, 
                         base_tensor, 
                         donor_tensors, 
-                        "weighted_task_vectors", 
-                        collapse_weight_dict[anchor_idx]
+                        "weighted_task_vectors_grad", 
+                        collapse_weight_dict[str(anchor_idx)]
                     )
-                # Delete collased layers from _out_tensor
+                # Delete collapsed layers from _out_tensor
                 for layer_idx in layer_idx_to_collapse:
                     cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
                     for cur_weight_name in cur_weight_names:
                         self._out_tensors.pop(cur_weight_name, None)
 
-        self._merge_postweights()
+            self._merge_postweights()
 
-        self._correct_out_tensor_names([i for i in range(len(self.slices)) if "collapse_scale" not in self.slices[i].keys()])
-        self._update_output_config()
-    
-        if not self.in_memory:
-            self._finalize_model()
+            self._correct_out_tensor_names([i for i in range(len(self.slices)) if not self.slices[i]["to_collapse"]])
+            self._update_output_config()
+        
+            if not self.in_memory:
+                self._finalize_model()
+
+            # Evaluate model on special entropy evaluator instance
+            optimizer.zero_grad()
+            entropy = get_entropy(self._out_tensors, self.output_config, self.aligned_tokenizer, with_grad=True, batch_size=1)["overall_entropy_sum_tensor"]
+            self._probe_grad_connectivity(collapse_weight_dict, entropy)
+            entropy.backward()
+
+            # Check gradient is updated in param dict
+            for name, p in collapse_weight_dict.items():
+                logger.info(f"{name}: requires_grad={p.requires_grad} "
+                    f"grad_is_none={p.grad is None} "
+                    f"{'' if p.grad is None else f'grad_norm={p.grad.norm().item():.4g}'}")
+
+            optimizer.step()
+
+        # Finally, return the parameter dictionary
+        return {k: v.detach().to("cpu") for k, v in collapse_weight_dict.items()}
+
+    def _probe_grad_connectivity(self, collapse_weight_dict, loss_tensor, *, max_print=6):
+        # 1) Do merged weights carry a grad path?
+        any_gradful_out = any(t.requires_grad for t in self._out_tensors.values())
+        logger.info(f"[probe] any(self._out_tensors requires_grad)= {any_gradful_out}")
+
+        if not any_gradful_out:
+            # Show a few gradful/gradless entries to help locate the break
+            gradful = [(k, tuple(v.shape)) for k, v in self._out_tensors.items() if v.requires_grad]
+            gradless = [(k, tuple(v.shape)) for k, v in self._out_tensors.items() if not v.requires_grad]
+            logger.info(f"[probe] gradful out_tensors (sample): {gradful[:max_print]}")
+            logger.info(f"[probe] gradless out_tensors (sample): {gradless[:max_print]}")
+
+        # 2) Does the loss carry grad?
+        logger.info(f"[probe] loss.requires_grad = {getattr(loss_tensor, 'requires_grad', None)}")
+
+        # 3) Is there a path from loss -> each collapse parameter?
+        #    (This does NOT populate .grad; it just checks connectivity.)
+        from torch.autograd import grad
+        for name, p in collapse_weight_dict.items():
+            g = grad(loss_tensor, p, retain_graph=True, allow_unused=True)[0]
+            msg = "None (DISCONNECTED)" if g is None else f"norm={g.norm().item():.4g}"
+            logger.info(f"[probe] d(loss)/d({name}) = {msg}")
 
     def fold_slices(self):
         logger.info("Start folding slices...")

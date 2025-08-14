@@ -95,6 +95,9 @@ class FoldAdamerging(MergeStrategy):
             else evaluator_classes['ondisk_evaluate']
         )
         self.evaluator_instance = self.evaluator_class(self.config)
+
+        # Current trail book keeping
+        self.cur_trail = 0
         
 
     def generate_genotype(self, config):

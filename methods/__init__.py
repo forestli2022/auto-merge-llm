@@ -9,6 +9,7 @@ from .ties import TiesMerging
 from .widen import WidenMerging
 from .passthrough import PassthroughMerging
 from .weighted_task_vectors import WeightedTaskVectors
+from .weighted_task_vectors_grad import WeightedTaskVectorsGrad
 
 merging_methods_dict = {
     "linear": LinearMerging,
@@ -22,6 +23,7 @@ merging_methods_dict = {
     "widen": WidenMerging,
     "passthrough": PassthroughMerging,
     "weighted_task_vectors": WeightedTaskVectors,
+    "weighted_task_vectors_grad": WeightedTaskVectorsGrad
 }
 
 
