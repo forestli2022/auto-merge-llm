@@ -71,9 +71,8 @@ class WeightedTaskVectors(MergeMethod):
         ]
         with torch.no_grad():
             # sum up the task vectors
-            merged_task_vector = models_to_merge_task_vectors[0] * scaling_coefficients[0] + \
-                models_to_merge_task_vectors[1] * scaling_coefficients[1]
-            for index in range(2, len(models_to_merge_task_vectors)):
+            merged_task_vector = models_to_merge_task_vectors[0] * scaling_coefficients[0]
+            for index in range(1, len(models_to_merge_task_vectors)):
                 merged_task_vector = merged_task_vector + \
                     models_to_merge_task_vectors[index] * scaling_coefficients[index]
 

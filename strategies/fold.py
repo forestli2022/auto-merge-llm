@@ -119,7 +119,7 @@ class FoldMerge(MergeStrategy):
             
             candidate_layer = []
             for cand_idx, model in enumerate(self.models):
-                if f'layer_{layer_idx}_candidate_{cand_idx}' in config.keys():
+                if config[f'layer_{layer_idx}_candidate_{cand_idx}']:
                     candidate_layer.append(model)
             
             merge_scale = config.get(f'layer_{layer_idx}_merge_scale_factor', 1)
@@ -474,7 +474,7 @@ class FoldMerge(MergeStrategy):
                 
                 # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
                 if layer_idx in remove_list:
-                    config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 1.0
+                    config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.1
                     # Randomly set merge/collapse order: 0 for merge (i-1)th layer first, 1 for collapse first
                     config_dict[f'layer_{layer_idx}_merge_collapse_order'] = random.randint(0, 1)
 
@@ -500,7 +500,7 @@ class FoldMerge(MergeStrategy):
                         # For each layer in the remove list, set collapse scale factor (and merge method, default to TA)
                         if layer_idx in remove_list:
                             # FIXME: Find a way to set collapse factor
-                            config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.3
+                            config_dict[f'layer_{layer_idx}_collapse_scale_factor'] = 0.1
                             # Randomly set merge/collapse order: 0 for merge (i-1)th layer first, 1 for collapse first
                             config_dict[f'layer_{layer_idx}_merge_collapse_order'] = random.randint(0, 1)
                         

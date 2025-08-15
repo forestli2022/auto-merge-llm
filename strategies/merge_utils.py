@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import json
@@ -5,13 +6,14 @@ from typing import Dict, List, Optional, Set, Tuple, Union, Any
 
 from transformers import AutoTokenizer, AutoConfig
 
-from evaluation.ada_in_memory import get_entropy
+from evaluation.ada_in_memory import EntropyEvaluator
 from loader import TensorLoader, TensorWriter
 from methods import merging_methods_dict
 from tokenizer import align_tokenizers_and_embeddings_v1
 from utils import get_model_storage_path, logger
 import torch
 from torch import nn
+from tqdm import tqdm
 
 
 class MergeUtils:
@@ -168,8 +170,8 @@ class MergeUtils:
                 for model in model_set
             }
         
-    def _update_output_config(self):
-        if self.slices:
+    def _update_output_config(self, num_hidden_layers=None):
+        if self.slices and num_hidden_layers is None:
             num_layers = 0
             try:
                 for slice_item in self.slices:
@@ -184,6 +186,8 @@ class MergeUtils:
                     "Unable to set number of layers in output config.",
                     exc_info=e,
                 )
+        elif num_hidden_layers is not None:
+            self._output_config.update({"num_hidden_layers": int(num_hidden_layers)})
         # update vocab
         try:
             self._output_config.update({"vocab_size": int(len(self._aligned_tokenizer.get_vocab()))})
@@ -302,11 +306,12 @@ class MergeUtils:
             merged_params[param_name] = matched_value if matched_value is not None else default_value
         return merged_params
 
-    def _merge_tensor(self, weight_name, base_tensor, tensors_to_merge, tensor_merge_method, tensor_merge_params):
-        tensor_merge_params = self._get_merge_params_by_filter(
-            tensor_merge_params,
-            weight_name
-        )
+    def _merge_tensor(self, weight_name, base_tensor, tensors_to_merge, tensor_merge_method, tensor_merge_params, write=True, param_is_list=False):
+        if not param_is_list:
+            tensor_merge_params = self._get_merge_params_by_filter(
+                tensor_merge_params,
+                weight_name
+            )
         if tensor_merge_method not in merging_methods_dict.keys():
             raise ValueError(f"Unsupported merge method: {tensor_merge_method}")
         merge_class = merging_methods_dict[tensor_merge_method]
@@ -318,12 +323,21 @@ class MergeUtils:
         )
        
         self._out_tensors[weight_name] = merged_tensor
-        if not self.in_memory:
+        if (not self.in_memory) and write:
             try:
-                self.tensor_writer.save_tensor(name=weight_name, tensor=merged_tensor)
+                self.tensor_writer.save_tensor(name=weight_name, tensor=merged_tensor.detach().cpu())
             except Exception as e:
                 print(f"Error saving tensor '{output_tensor.key}': {e}")
-       
+
+    def _save_all_tensors(self):
+        for weight_name, tensor in self._out_tensors.items():
+            if not self.in_memory:
+                try:
+                    self.tensor_writer.save_tensor(name=weight_name, tensor=tensor.detach().cpu())
+                    logger.info(f"tensor {weight_name}: {tensor.view(-1)[0]}")
+                except Exception as e:
+                    print(f"Error saving tensor '{weight_name}': {e}")
+
     def _get_slice_config(self, cur_slice, weight_names, method_key="merging_method"):
         logger.info(f"get slice config: current slice: {cur_slice}, weight_names: {weight_names}")
         sources = cur_slice['sources']
@@ -371,7 +385,7 @@ class MergeUtils:
             tensor_merge_params.append(tensor_merge_param)
         return tensor_merge_method, tensor_merge_params, global_tensor_merge_params,  tensors_to_merge  
              
-    def _merge_layer(self, cur_slice, layer_offset):
+    def _merge_layer(self, cur_slice, layer_offset, write=True):
         logger.info(f"start merge layer: current slice: {cur_slice}, current layer: {self.current_layer_offset+layer_offset}")
         sources = cur_slice["sources"]
         target_layers = [source['layer_range'][0] + layer_offset for source in sources]
@@ -390,9 +404,9 @@ class MergeUtils:
            
             cur_weight_names = [weight_name.replace(f"layers.{base_target_layer}.", f"layers.{target_layer}.") for target_layer in target_layers]
             tensor_merge_method, tensor_merge_params, global_tensor_merge_params, tensors_to_merge = self._get_slice_config(cur_slice, cur_weight_names)
-            self._merge_tensor(target_weight_name, base_tensor, tensors_to_merge, tensor_merge_method, global_tensor_merge_params)
-    
-    def _merge_slice(self, cur_slice):
+            self._merge_tensor(target_weight_name, base_tensor, tensors_to_merge, tensor_merge_method, global_tensor_merge_params, write=write)
+
+    def _merge_slice(self, cur_slice, write=True):
         logger.info(f"start merge slice {cur_slice}")
         sources = cur_slice["sources"]
         slice_lengths = [
@@ -408,17 +422,18 @@ class MergeUtils:
         for idx in range(num_layers):
             self._merge_layer(
                 cur_slice,
-                layer_offset=idx
+                layer_offset=idx,
+                write=write
             )
         self.current_layer_offset += num_layers
     
-    def _merge_postweights(self):
+    def _merge_postweights(self, write=True):
         post_norm_weights = self._get_matches_weight_names('model.norm.weight')
         assert len(post_norm_weights) == 1 
         for weight_name in [post_norm_weights[0]]:
             base_tensor = self.base_model_cache.get_tensor(weight_name) if self.base_model else None
             tensor_merge_method, tensor_merge_params, global_tensor_merge_params, tensors_to_merge = self._get_slice_config(self.slices[-1], [weight_name])
-            self._merge_tensor(weight_name, base_tensor, tensors_to_merge, tensor_merge_method, global_tensor_merge_params)
+            self._merge_tensor(weight_name, base_tensor, tensors_to_merge, tensor_merge_method, global_tensor_merge_params, write=write)
     
     def _finalize_tensors(self):
         self.tensor_writer.finalize()
@@ -501,7 +516,7 @@ class MergeUtils:
         
         # Merge all the slices first
         for cur_slice in self.slices:
-            self._merge_slice(cur_slice)
+            self._merge_slice(cur_slice, write=False)
         
         # Fold slice once
         last_anchor_idx = -1
@@ -517,7 +532,7 @@ class MergeUtils:
                     # Collapse all the layer indices to last anchor layer
                     logger.info(f"Collapsing layers {layer_idx_to_collapse} to anchor layer {last_anchor_idx}")
                     
-                    anchor_weight_names = self._get_matches_weight_names(f"layers.{last_anchor_idx}", match_layer=True)
+                    anchor_weight_names = self._get_matches_weight_names(str(last_anchor_idx), match_layer=True)
                     for anchor_weight_name in anchor_weight_names:
                         base_tensor = self._out_tensors[anchor_weight_name]
                         cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
@@ -528,11 +543,13 @@ class MergeUtils:
                             base_tensor, 
                             donor_tensors, 
                             last_anchor_collapse_method, 
-                            last_anchor_collapse_params
+                            last_anchor_collapse_params,
+                            write=False
                         )
+                        logger.info(f"merged {anchor_weight_name} with {cur_weight_names}, scales {last_anchor_collapse_params}")
                     # Delete collased layers from _out_tensor
                     for layer_idx in layer_idx_to_collapse:
-                        cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
+                        cur_weight_names = self._get_matches_weight_names(str(layer_idx), match_layer=True)
                         for cur_weight_name in cur_weight_names:
                             self._out_tensors.pop(cur_weight_name, None)
 
@@ -548,11 +565,13 @@ class MergeUtils:
         
         self._merge_postweights()
 
-        self._correct_out_tensor_names([i for i in range(len(self.slices)) if not self.slices[i]["to_collapse"]])
+        remaining_indices = [i for i in range(len(self.slices)) if not self.slices[i]["to_collapse"]]
+        self._correct_out_tensor_names(remaining_indices)
 
-        self._update_output_config()
+        self._update_output_config(num_hidden_layers=len(remaining_indices))
     
         if not self.in_memory:
+            self._save_all_tensors()
             self._finalize_model()
 
     def merge_slices(self):
@@ -579,7 +598,7 @@ class MergeUtils:
         
         # Merge all the slices first
         for cur_slice in self.slices:
-            self._merge_slice(cur_slice)
+            self._merge_slice(cur_slice, write=False)
         
         # Fold slice once
         last_anchor_idx = -1
@@ -595,7 +614,7 @@ class MergeUtils:
                     # Collapse all the layer indices to last anchor layer
                     logger.info(f"Collapsing layers {layer_idx_to_collapse} to anchor layer {last_anchor_idx}, with scales {layer_collapse_scales}")
                     
-                    anchor_weight_names = self._get_matches_weight_names(f"layers.{last_anchor_idx}", match_layer=True)
+                    anchor_weight_names = self._get_matches_weight_names(f"{last_anchor_idx}", match_layer=True)
                     for anchor_weight_name in anchor_weight_names:
                         base_tensor = self._out_tensors[anchor_weight_name]
                         cur_weight_names = [anchor_weight_name.replace(f"layers.{last_anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_idx_to_collapse]
@@ -606,11 +625,14 @@ class MergeUtils:
                             base_tensor, 
                             donor_tensors, 
                             "weighted_task_vectors", 
-                            layer_collapse_scales
+                            layer_collapse_scales,
+                            write=False,
+                            param_is_list=True
                         )
+                        logger.info(f"merged {anchor_weight_name} with {cur_weight_names}, scales {layer_collapse_scales}")
                     # Delete collased layers from _out_tensor
                     for layer_idx in layer_idx_to_collapse:
-                        cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
+                        cur_weight_names = self._get_matches_weight_names(f"{layer_idx}", match_layer=True)
                         for cur_weight_name in cur_weight_names:
                             self._out_tensors.pop(cur_weight_name, None)
 
@@ -624,113 +646,224 @@ class MergeUtils:
         
         self._merge_postweights()
 
-        self._correct_out_tensor_names([i for i in range(len(self.slices)) if "collapse_scale" not in self.slices[i].keys()])
-        self._update_output_config()
+        remaining_indices = [i for i in range(len(self.slices)) if "collapse_scale" not in self.slices[i].keys()]
+        self._correct_out_tensor_names(remaining_indices)
+
+        self._update_output_config(num_hidden_layers=len(remaining_indices))
     
         if not self.in_memory:
+            self._save_all_tensors()
             self._finalize_model()
+
+    def _apply_collapse_from_backup(self, backup_out_tensors, clusters, collapse_weight_dict):
+        """Rebuild self._out_tensors from a fresh backup using current collapse weights; no disk writes."""
+        self._out_tensors = {k: v.detach().clone() for k, v in backup_out_tensors.items()}
+        dev = next(iter(collapse_weight_dict.values())).device
+
+        logger.info(f"clusters: {clusters}")
+        for anchor_idx, layer_indices in clusters.items():
+            anchor_weight_names = self._get_matches_weight_names(f"{anchor_idx}", match_layer=True)
+            # logger.info(f"anchor_weight_names: {anchor_weight_names}")
+            for anchor_weight_name in anchor_weight_names:
+                base_tensor = self._out_tensors[anchor_weight_name].to(dev)
+                cur_weight_names = [
+                    anchor_weight_name.replace(f"layers.{anchor_idx}.", f"layers.{li}.") for li in layer_indices
+                ]
+                donor_tensors = [self._out_tensors[n].to(dev) for n in cur_weight_names]
+
+                self._merge_tensor(
+                    anchor_weight_name,
+                    base_tensor,
+                    donor_tensors,
+                    "weighted_task_vectors_grad",
+                    collapse_weight_dict[str(anchor_idx)],
+                    write=False,
+                    param_is_list=True
+                )
+                
+                # logger.info(f"collapsed {anchor_weight_name} from layers {layer_indices} to {anchor_idx}")
+                # merged_t = self._out_tensors[anchor_weight_name]
+                # logger.info(f"[probe] {anchor_weight_name}.requires_grad={merged_t.requires_grad}")
+                # logger.info(f"[probe] grad_fn={type(merged_t.grad_fn).__name__ if merged_t.grad_fn else None}")
+
+            for li in layer_indices:
+                for n in self._get_matches_weight_names(f"{li}", match_layer=True):
+                    self._out_tensors.pop(n, None)
+
+        self._merge_postweights(write=False)
+        collapsed = set(l for L in clusters.values() for l in L)
+        remaining_indices = [i for i in range(len(self.slices)) if i not in collapsed]
+        self._correct_out_tensor_names(remaining_indices)
+        self._update_output_config()
+
 
     def fold_ada(self):
         """
-        First merge all the expert model layers
-        Then fold the slices using adamerging, adaptively adjust folding weights
+        Adamerging (per-batch updates):
+        - build the initial merged tensor set once
+        - train collapse scales with one optimizer.step() **per batch**
+        - **reapply the merge after each step** so the next batch sees updated weights
+        - save/finalize (if not in_memory)
         """
         logger.info("Start folding and merging slices...")
         logger.info(f"Current slices: {self.slices}")
+
+        # Prep and initial full merge (no disk writes)
         self._pre_cache()
         self._build_tokenizer_and_embed()
-        
-        # Merge all the slices first
         for cur_slice in self.slices:
-            self._merge_slice(cur_slice)
-        
-        # Make a copy of _out_tensor, for adamerging
-        _out_tensor_copy = {k: v.detach().clone() for k, v in self._out_tensors.items()}
+            self._merge_slice(cur_slice, write=False)
+        self._merge_postweights(write=False)
 
-        # Collect collapsing layers
+        # Backup current out_tensors for re-merge reconstruction
+        _out_tensor_backup = {k: v.detach().clone() for k, v in self._out_tensors.items()}
+
+        # Build clusters (anchor -> list of follower layer indices)
         last_anchor_idx = -1
-        layer_idx_to_collapse = []
-        clusters = {} # cluster of layers, key is the index of anchor layer, value is a list of following layers to collapse
+        layer_indices = []
+        clusters = {}
         for idx in range(len(self.slices)):
-            cur_slice = self.slices[idx]
-            if cur_slice["to_collapse"]:
-                layer_idx_to_collapse.append(idx)
+            cur = self.slices[idx]
+            if cur["to_collapse"]:
+                layer_indices.append(idx)
+                # close a run of followers when the next isn't "to_collapse" or we're at the end
                 if idx == len(self.slices) - 1 or not self.slices[idx + 1]["to_collapse"]:
-                    # Collapse all the layer indices to last anchor layer
-                    logger.info(f"Layers {layer_idx_to_collapse} will be collapsed to anchor layer {last_anchor_idx}")
-                    clusters[last_anchor_idx] = layer_idx_to_collapse
-
+                    logger.info(f"Layers {layer_indices} will be collapsed to anchor layer {last_anchor_idx}")
+                    clusters[last_anchor_idx] = list(layer_indices)
                     last_anchor_idx = -1
-                    layer_idx_to_collapse = []
-                        
+                    layer_indices = []
             else:
-                # Anchor layer
                 last_anchor_idx = idx
 
-        # Build parameter for collapsing
-        collapse_weight_dict = nn.ParameterDict() # key: anchor layer. # value: collapsing layer scale factors
-        for anchor_idx, layer_indices in clusters.items():
-            # parameters are initially set to 0.1, length of layer_indices
-            collapse_weight_dict[str(anchor_idx)] = nn.Parameter(torch.full((len(layer_indices),), 0.1))
-        
-        for name, p in collapse_weight_dict.items():
-            logger.info(f"  {name}: shape={tuple(p.shape)}, numel={p.numel()}, requires_grad={p.requires_grad}")
-        # Initialize special adamegring evaluator
+        # Freeze tensors being merged; learn only collapse weights
+        for _, v in self._out_tensors.items():
+            v.requires_grad_(False)
+
+        # Trainable collapse scales (stay on CUDA if available)
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        collapse_weight_dict = nn.ParameterDict()
+        for anchor_idx, followers in clusters.items():
+            collapse_weight_dict[str(anchor_idx)] = nn.Parameter(
+                torch.full((len(followers),), 0.1, dtype=torch.float32, device=dev)
+            )
+
+        # Evaluator & optimizer
+        ev = EntropyEvaluator(
+            device="cuda", dtype="float16",
+            mem_log_every=20, peak_log_every=5,
+            tag="ada-merge",
+        )
         optimizer = torch.optim.Adam(collapse_weight_dict.parameters(), lr=1e-3)
 
-        # Adamerging loop
-        logger.info("Starting adamerging optimization...")
-        for iteration in range(10):
-            # Set self._out_tensor to the copy
-            self._out_tensors = {k: v.detach().clone() for k, v in _out_tensor_copy.items()}
-            # Set _out_tensors parameter to require gradient
-            for value in self._out_tensors.values():
-                value.requires_grad_(True)
+        # ---- batching moved here ----
+        tasks = ("piqa", "csqa", "mmlu", "wsc")
+        limit = 100
+        max_len = 2048
+        length_norm = False
+        batch_size = 8
+        base = math.e
+        split_overrides = {"mmlu": "validation"}
+        mmlu_subjects = "auto"
 
-            logger.info(f"Iteration {iteration + 1} of adamerging...")
-            for anchor_idx, layer_indices in clusters.items():
-                anchor_weight_names = self._get_matches_weight_names(f"layers.{anchor_idx}", match_layer=True)
-                for anchor_weight_name in anchor_weight_names:
-                    base_tensor = self._out_tensors[anchor_weight_name]
-                    cur_weight_names = [anchor_weight_name.replace(f"layers.{anchor_idx}.", f"layers.{layer_idx}.") for layer_idx in layer_indices]
-                    
-                    donor_tensors = [self._out_tensors[cur_weight_name] for cur_weight_name in cur_weight_names]
-                    self._merge_tensor(
-                        anchor_weight_name, 
-                        base_tensor, 
-                        donor_tensors, 
-                        "weighted_task_vectors_grad", 
-                        collapse_weight_dict[str(anchor_idx)]
-                    )
-                # Delete collapsed layers from _out_tensor
-                for layer_idx in layer_idx_to_collapse:
-                    cur_weight_names = self._get_matches_weight_names(f"layers.{layer_idx}", match_layer=True)
-                    for cur_weight_name in cur_weight_names:
-                        self._out_tensors.pop(cur_weight_name, None)
+        # Make datasets once (shuffled inside loaders where applicable)
+        datasets = []
+        for task in tasks:
+            loader = ev._get_loader(task)
+            if task == "mmlu":
+                samples = loader(limit=limit, split=split_overrides.get("mmlu", "validation"),
+                                subjects=mmlu_subjects)
+            elif task == "piqa":
+                samples = loader(limit=limit, split=split_overrides.get("piqa", "validation"))
+            elif task == "csqa":
+                samples = loader(limit=limit, split=split_overrides.get("csqa", "validation"))
+            elif task == "wsc":
+                samples = loader(limit=limit, split=split_overrides.get("wsc", "validation"))
+            else:
+                samples = loader(limit=limit)
+            datasets.append((task, samples))
 
-            self._merge_postweights()
+        # Build the model once (re-using functional_call with overrides each batch)
+        ev._ensure_model(self.output_config, self.aligned_tokenizer)
 
-            self._correct_out_tensor_names([i for i in range(len(self.slices)) if not self.slices[i]["to_collapse"]])
-            self._update_output_config()
-        
-            if not self.in_memory:
-                self._finalize_model()
+        from torch.func import functional_call  # local import to avoid touching other files
 
-            # Evaluate model on special entropy evaluator instance
-            optimizer.zero_grad()
-            entropy = get_entropy(self._out_tensors, self.output_config, self.aligned_tokenizer, with_grad=True, batch_size=1)["overall_entropy_sum_tensor"]
-            self._probe_grad_connectivity(collapse_weight_dict, entropy)
-            entropy.backward()
+        epochs = 1
+        global_step = 0
+        for ep in range(epochs):
+            logger.info(f"Epoch {ep+1}/{epochs} — per-batch merge/step/re-merge")
 
-            # Check gradient is updated in param dict
-            for name, p in collapse_weight_dict.items():
-                logger.info(f"{name}: requires_grad={p.requires_grad} "
-                    f"grad_is_none={p.grad is None} "
-                    f"{'' if p.grad is None else f'grad_norm={p.grad.norm().item():.4g}'}")
+            for task, samples in datasets:
+                for i in range(0, len(samples), batch_size):
+                    batch_samples = samples[i:i + batch_size]
 
-            optimizer.step()
+                    # Rebuild merged tensors **before** forward using current collapse weights
+                    self._apply_collapse_from_backup(_out_tensor_backup, clusters, collapse_weight_dict)
 
-        # Finally, return the parameter dictionary
+                    # Map merged tensors to model params (keeps graph + devices aligned)
+                    overrides = ev._prepare_param_overrides(self._out_tensors)
+
+                    # Model callable with overrides
+                    def _model_with_overrides(**kwargs):
+                        return functional_call(
+                            ev.model, overrides, args=(), kwargs={**kwargs, "use_cache": False}
+                        )
+
+                    ev._gpu_mem_report("caller:before_forward")
+
+                    # Forward + loss for this batch
+                    if (global_step % ev.peak_log_every) == 0:
+                        with ev._gpu_peak_scope(f"forward step={global_step}"):
+                            loss = ev._entropy_batch_loss(
+                                model_callable=_model_with_overrides,
+                                tokenizer=self.aligned_tokenizer,
+                                samples=batch_samples,
+                                max_len=max_len,
+                                length_norm=length_norm,
+                                base=base,
+                            )
+                    else:
+                        loss = ev._entropy_batch_loss(
+                            model_callable=_model_with_overrides,
+                            tokenizer=self.aligned_tokenizer,
+                            samples=batch_samples,
+                            max_len=max_len,
+                            length_norm=length_norm,
+                            base=base,
+                        )
+
+                    ev._gpu_mem_report("caller: after_forward_before_backward")
+                    self._probe_grad_connectivity(collapse_weight_dict, loss)
+                    # Backprop and single optimizer step **per batch**
+                    optimizer.zero_grad(set_to_none=True)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(collapse_weight_dict.parameters(), 1.0)
+                    ev._gpu_mem_report("caller: after_backward_before_step")
+                    optimizer.step()
+                    optimizer.zero_grad(set_to_none=True)
+
+                    logger.info(f"[ada-merge] step={global_step} task={task} "
+                                f"batch={i//batch_size+1}/{(len(samples)+batch_size-1)//batch_size} "
+                                f"loss={float(loss):.4f}")
+                    if (global_step % ev.mem_log_every) == 0:
+                        ev._gpu_mem_report(f"after step={global_step}")
+
+                    del loss
+                    del overrides
+
+                    self._out_tensors.clear()
+                    ev._gpu_mem_report("caller: after_step_after_cleanup")
+                    global_step += 1
+
+        self._apply_collapse_from_backup(_out_tensor_backup, clusters, collapse_weight_dict)
+
+        # Final merged weights already applied by last re-merge; ensure postweights are present
+        self._merge_postweights(write=False)
+
+        if not self.in_memory:
+            self._save_all_tensors()
+            self._finalize_model()
+
+        # Return CPU copy of learned scales
         return {k: v.detach().to("cpu") for k, v in collapse_weight_dict.items()}
 
     def _probe_grad_connectivity(self, collapse_weight_dict, loss_tensor, *, max_print=6):
@@ -772,7 +905,7 @@ class MergeUtils:
             # Merge current slice if not done yet
             if not has_merged:
                 self.current_layer_offset = idx
-                self._merge_slice(cur_slice)
+                self._merge_slice(cur_slice, write=False)
                 self.current_layer_offset = idx
             has_merged = False
 
@@ -785,7 +918,7 @@ class MergeUtils:
                 # If layer i-1 is merged first (order == 0)
                 if order == 0:
                     self.current_layer_offset = idx - 1
-                    self._merge_slice(prev_slice)
+                    self._merge_slice(prev_slice, write=False)
                     self.current_layer_offset = idx - 1
                     has_merged = True
                 else:
@@ -806,6 +939,7 @@ class MergeUtils:
                         [base_tensor, donor_tensor],
                         collapse_method,
                         collapse_params,
+                        write=False
                     )
 
                     self._out_tensors.pop(cur_weight_name, None)
@@ -816,16 +950,16 @@ class MergeUtils:
 
         self._merge_postweights()
 
-        self._correct_out_tensor_names(remaining_idx)
+        remaining_indices = [i for i in range(len(self.slices)) if "collapsing_method" not in self.slices[i].keys()]
+        self._correct_out_tensor_names(remaining_indices)
 
-        self._update_output_config()
+        self._update_output_config(num_hidden_layers=len(remaining_indices))
     
         if not self.in_memory:
+            self._save_all_tensors()
             self._finalize_model()
             
     def _correct_out_tensor_names(self, remaining_indices):
-        logger.info("_out_tensors after folding:")
-        logger.info(self._out_tensors.keys())
         logger.info(f"Remaining indices after folding: {remaining_indices}")
         # Need to fix the tensor names and remove redundant tensors after collapsing
         index_map = {} # map to track the new indices of layers
@@ -849,8 +983,8 @@ class MergeUtils:
                 new_tensors[name] = tensor     # embeddings, lm_head, etc.
         self._out_tensors = new_tensors
         self._output_config.num_hidden_layers = len(set(index_map.values()))
-        logger.info("_out_tensors after layer index updating:")
-        logger.info(self._out_tensors.keys())
+        # logger.info("_out_tensors after layer index updating:")
+        # logger.info(self._out_tensors.keys())
 
         # Log the final number of layers, which layers are collapsed
         logger.info(f"Final number of layers: {self._output_config.num_hidden_layers}")

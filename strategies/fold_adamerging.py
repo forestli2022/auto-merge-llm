@@ -122,7 +122,7 @@ class FoldAdamerging(MergeStrategy):
             
             candidate_layer = []
             for cand_idx, model in enumerate(self.models):
-                if f'layer_{layer_idx}_candidate_{cand_idx}' in config.keys():
+                if config[f'layer_{layer_idx}_candidate_{cand_idx}']:
                     candidate_layer.append(model)
             
             merge_scale = config.get(f'layer_{layer_idx}_merge_scale_factor', 1)

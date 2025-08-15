@@ -57,7 +57,6 @@ class WeightedTaskVectorsGrad(MergeMethod):
         method_params,
         mask_merging=None,
         tensor_name="default",
-        with_grad=False
     ):
         scaling_coefficients = method_params
         base_tensor_dict = {tensor_name: base_tensor}
@@ -65,20 +64,19 @@ class WeightedTaskVectorsGrad(MergeMethod):
             TaskVector(
                 task_vector_param_dict={
                     tensor_name: merging_tensor.to("cpu") - base_tensor.to("cpu")
-                }
+                },
+                with_grad=True
             )
             for merging_tensor in tensors_to_merge
         ]
-        with torch.no_grad():
-            # sum up the task vectors
-            merged_task_vector = models_to_merge_task_vectors[0] * scaling_coefficients[0] + \
-                models_to_merge_task_vectors[1] * scaling_coefficients[1]
-            for index in range(2, len(models_to_merge_task_vectors)):
-                merged_task_vector = merged_task_vector + \
-                    models_to_merge_task_vectors[index] * scaling_coefficients[index]
+        # sum up the task vectors
+        merged_task_vector = models_to_merge_task_vectors[0] * scaling_coefficients[0]
+        for index in range(1, len(models_to_merge_task_vectors)):
+            merged_task_vector = merged_task_vector + \
+                models_to_merge_task_vectors[index] * scaling_coefficients[index]
 
-            merged_params = merged_task_vector.combine_with_base_tensor(
-                base_tensor=base_tensor_dict,
-                scaling_coefficient=1.0
-            )
+        merged_params = merged_task_vector.combine_with_base_tensor(
+            base_tensor=base_tensor_dict,
+            scaling_coefficient=1.0,
+        )
         return merged_params[tensor_name]
