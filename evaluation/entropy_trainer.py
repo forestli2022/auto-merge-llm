@@ -319,7 +319,7 @@ class EntropyTrainer:
         batch_idx: int,
         batch_size: int,
         max_len: int = 2048,
-        length_norm: bool = False,
+        length_norm: bool = True,
         base=math.e,
         limit: int = 100,
         split: str = "validation",

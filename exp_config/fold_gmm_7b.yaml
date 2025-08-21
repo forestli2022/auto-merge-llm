@@ -1,0 +1,10 @@
+n_trials: 10
+seed: 0
+num_hidden_layers: 32
+per_block_dim: 32
+layers: 23
+base_model: "meta-llama/Llama-2-7b-hf"
+models:
+    - "TIGER-Lab/MAmmoTH-7B"
+    - "meta-llama/Llama-2-7b-chat-hf"
+    - "mrm8488/llama-2-coder-7b"
