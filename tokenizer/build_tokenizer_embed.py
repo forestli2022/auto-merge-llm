@@ -14,10 +14,10 @@ def align_tokenizers_and_embeddings(
     try:
         # examine the pretrained tokenizer
         models_vocab_size = [pretrained_vocab_size]
-        logger.info(
-            "Vocab size of pretrained model is %d .",
-            pretrained_vocab_size
-        )
+        # logger.info(
+        #     "Vocab size of pretrained model is %d .",
+        #     pretrained_vocab_size
+        # )
         pretrained_token_dict = json.loads(
             pretrained_tokenizer._tokenizer.to_str()
         )
@@ -44,12 +44,12 @@ def align_tokenizers_and_embeddings(
                 for token_dict in finetuned_token_dict["added_tokens"] 
                 if token_dict["id"] >= pretrained_vocab_size
             ]          
-            logger.info(
-                "Vocab size of index %d finetuned model is %d.",
-                index,
-                finetuned_vocab_size
-            )
-            logger.info(f"Added pad tokens of index {index} finetuned model is {finetuned_added_pad_tokens}.")
+            # logger.info(
+            #     "Vocab size of index %d finetuned model is %d.",
+            #     index,
+            #     finetuned_vocab_size
+            # )
+            # logger.info(f"Added pad tokens of index {index} finetuned model is {finetuned_added_pad_tokens}.")
             # the tokens are added in tokenizer config but the corresponding embeddings are missing
             finetuned_added_vocab_size = (
                 finetuned_vocab_size - pretrained_vocab_size
@@ -76,7 +76,7 @@ def align_tokenizers_and_embeddings(
                     for token_dict in finetuned_added_pad_tokens
                 ]
             ))
-        logger.info(f"All added pad tokens of finetuned models are {added_pad_tokens_set}.")
+        # logger.info(f"All added pad tokens of finetuned models are {added_pad_tokens_set}.")
 
         # align the tokenizers
         aligned_models_vocab_size_set = set()
@@ -93,7 +93,7 @@ def align_tokenizers_and_embeddings(
                 # deal with models like llama-2-13b-code-alpaca, whose finetuned_token_dict['added_tokens'] contains pad tokens and token embeddings are added,
                 # but tokenizer.add_special_tokens({"pad_token": "<pad>"}) returns 1 instead of 0 (this model does not have tokenizer.json file)
                 if is_matched and added_pad_token in model_added_pad_tokens_list:
-                    logger.info(f"Skip added pad token {added_pad_token} of index {index} model since its original added pad tokens and token embeddings are matched.")
+                    # logger.info(f"Skip added pad token {added_pad_token} of index {index} model since its original added pad tokens and token embeddings are matched.")
                     continue
                 num_new_tokens = tokenizer.add_special_tokens({"pad_token": added_pad_token})
                 if num_new_tokens > 0:
@@ -111,9 +111,9 @@ def align_tokenizers_and_embeddings(
                     input_embeddings[-num_new_tokens:] = input_embeddings_avg
                     output_embeddings[-num_new_tokens:] = output_embeddings_avg
             
-            logger.info(f"Aligned index {index} model: input token embedding shape {model.get_input_embeddings().weight.shape}, "
-                        f"output token embedding shape {model.get_output_embeddings().weight.shape}, "
-                        f"tokenizer added tokens {json.loads(tokenizer._tokenizer.to_str())['added_tokens']}.")
+            # logger.info(f"Aligned index {index} model: input token embedding shape {model.get_input_embeddings().weight.shape}, "
+            #             f"output token embedding shape {model.get_output_embeddings().weight.shape}, "
+            #             f"tokenizer added tokens {json.loads(tokenizer._tokenizer.to_str())['added_tokens']}.")
             aligned_models_vocab_size_set.add(
                 model.model.embed_tokens.weight.shape
             )
@@ -177,9 +177,9 @@ def align_tokenizers_and_embeddings_v1(
         pretrained_tokenizer = None
         pretrained_config = None
     
-    logger.info("pretrained tokenizer") 
-    logger.info(pretrained_tokenizer)
-    logger.info(pretrained_config)
+    # logger.info("pretrained tokenizer") 
+    # logger.info(pretrained_tokenizer)
+    # logger.info(pretrained_config)
     
     
      
@@ -191,10 +191,10 @@ def align_tokenizers_and_embeddings_v1(
     for model_name, model_config in merging_models_tokenizer_config.items():
         tokenizer = model_config.get("tokenizer")
         config = model_config.get("config")
-        logger.info("finetuned tokenizer") 
-        logger.info(model_name)
-        logger.info(tokenizer)
-        logger.info(config)
+        # logger.info("finetuned tokenizer") 
+        # logger.info(model_name)
+        # logger.info(tokenizer)
+        # logger.info(config)
         
         if tokenizer and config:
             finetuned_tokenizers.append(tokenizer)
@@ -206,7 +206,7 @@ def align_tokenizers_and_embeddings_v1(
     
     # if no pretrain config, then pretrain config should choose the smallest vocab_size one 
     if pretrained_model_input_embed is None:
-        logger.info("pretrained model input embed is none")
+        # logger.info("pretrained model input embed is none")
         min_index = min(range(len(finetuned_configs)), key=lambda i: finetuned_configs[i].vocab_size)
 
         pretrained_model_input_embed = finetuned_model_input_embeds[min_index]
@@ -219,17 +219,17 @@ def align_tokenizers_and_embeddings_v1(
     try:
         # examine the pretrained tokenizer
         models_vocab_size = [pretrained_vocab_size]
-        logger.info(
-            "Vocab size of pretrained model is %d.",
-            pretrained_vocab_size
-        )
+        # logger.info(
+        #     "Vocab size of pretrained model is %d.",
+        #     pretrained_vocab_size
+        # )
         pretrained_token_dict = json.loads(pretrained_tokenizer._tokenizer.to_str())
         pretrained_added_pad_tokens = [
             token_dict
             for token_dict in pretrained_token_dict["added_tokens"]
             if token_dict["id"] >= pretrained_vocab_size
         ]
-        logger.info(f"pretrained added pad tokens are {pretrained_added_pad_tokens}")
+        # logger.info(f"pretrained added pad tokens are {pretrained_added_pad_tokens}")
         assert pretrained_added_pad_tokens == []
         models_added_pad_tokens_list = [(True, pretrained_added_pad_tokens)]
 
@@ -246,8 +246,8 @@ def align_tokenizers_and_embeddings_v1(
                 for token_dict in finetuned_token_dict["added_tokens"] 
                 if token_dict["id"] >= pretrained_vocab_size
             ]
-            logger.info(f"Vocab size of index {index} finetuned model is {finetuned_vocab_size}.")
-            logger.info(f"Added pad tokens of index {index} finetuned model is {finetuned_added_pad_tokens}.")
+            # logger.info(f"Vocab size of index {index} finetuned model is {finetuned_vocab_size}.")
+            # logger.info(f"Added pad tokens of index {index} finetuned model is {finetuned_added_pad_tokens}.")
            
             # the tokens are added in tokenizer config but the corresponding embeddings are missing
             finetuned_added_vocab_size = (
@@ -279,7 +279,7 @@ def align_tokenizers_and_embeddings_v1(
                     for token_dict in finetuned_added_pad_tokens
                 ]
             ))
-        logger.info(f"All added pad tokens of finetuned models are {added_pad_tokens_set}.")
+        # logger.info(f"All added pad tokens of finetuned models are {added_pad_tokens_set}.")
 
         # align the tokenizers
         aligned_models_vocab_size_set = set()
@@ -297,7 +297,7 @@ def align_tokenizers_and_embeddings_v1(
                 # deal with models like llama-2-13b-code-alpaca, whose finetuned_token_dict['added_tokens'] contains pad tokens and token embeddings are added,
                 # but tokenizer.add_special_tokens({"pad_token": "<pad>"}) returns 1 instead of 0 (this model does not have tokenizer.json file)
                 if is_matched and added_pad_token in model_added_pad_tokens_list:
-                    logger.info(f"Skip added pad token {added_pad_token} of index {index} model since its original added pad tokens and token embeddings are matched.")
+                    # logger.info(f"Skip added pad token {added_pad_token} of index {index} model since its original added pad tokens and token embeddings are matched.")
                     continue
                 num_new_tokens = tokenizer.add_special_tokens(
                     {"pad_token": added_pad_token}
@@ -316,9 +316,9 @@ def align_tokenizers_and_embeddings_v1(
             input_aligned_embeds.append(input_embed)
             output_aligned_embeds.append(output_embed)
             
-            logger.info(f"Aligned index {index} model: input token embedding shape {input_embed.shape}, "
-                        f"output token embedding shape {output_embed.shape}, "
-                        f"tokenizer added tokens {json.loads(tokenizer._tokenizer.to_str())['added_tokens']}.")
+            # logger.info(f"Aligned index {index} model: input token embedding shape {input_embed.shape}, "
+                        # f"output token embedding shape {output_embed.shape}, "
+                        # f"tokenizer added tokens {json.loads(tokenizer._tokenizer.to_str())['added_tokens']}.")
             
             aligned_models_vocab_size_set.add(input_embed.shape)
         assert len(aligned_models_vocab_size_set) == 1

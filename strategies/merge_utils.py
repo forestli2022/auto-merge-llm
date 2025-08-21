@@ -694,7 +694,7 @@ class MergeUtils:
         collapsed = set(l for L in clusters.values() for l in L)
         remaining_indices = [i for i in range(len(self.slices)) if i not in collapsed]
         self._correct_out_tensor_names(remaining_indices)
-        self._update_output_config()
+        self._update_output_config(num_hidden_layers=len(remaining_indices))
 
 
     def fold_ada(self):

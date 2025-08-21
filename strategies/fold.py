@@ -446,17 +446,19 @@ class FoldMerge(MergeStrategy):
         remove_list_options = self.generate_remove_lists(total_layers, remove_count)
         
         # Merge factors and candidate patterns
-        merge_scales = [0.3, 0.5, 0.6, 0.7, 0.8, 1.0]
+        # merge_scales = [0.3, 0.5, 0.6, 0.7, 0.8, 1.0]
+        merge_scales = [0.3]
         
-        candidate_patterns = [
-            [1, 0, 0], 
-            [0, 1, 0],
-            [0, 0, 1],
-            [1, 1, 0],
-            [1, 0, 1],
-            [0, 1, 1], 
-            [1, 1, 1],
-        ]
+        # candidate_patterns = [
+        #     [1, 0, 0], 
+        #     [0, 1, 0],
+        #     [0, 0, 1],
+        #     [1, 1, 0],
+        #     [1, 0, 1],
+        #     [0, 1, 1], 
+        #     [1, 1, 1],
+        # ]
+        candidate_patterns = [[1,0,0]]
 
         # Generate initial parameters for each remove_list option
         for option_name, remove_list in remove_list_options.items():

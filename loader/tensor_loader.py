@@ -32,7 +32,7 @@ class TensorLoader:
 
             shard_file = self.tensor_paths[key]
             shard_full_path = os.path.join(self.base_path, shard_file)
-            logger.debug(f"Opening shard {shard_full_path}")
+            # logger.debug(f"Opening shard {shard_full_path}")
             self.current_shard = self.get_current_shard_tensors(
                 shard_full_path
             )

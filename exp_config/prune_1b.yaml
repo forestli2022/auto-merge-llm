@@ -1,6 +1,6 @@
 eta: 3 
 n_workers: 2
-n_trials: 250
+n_trials: 300
 random_init_points: 0
 min_budget: 100  # minimum budget per trial
 max_budget: 500 # maximum budget per trial 1000 
