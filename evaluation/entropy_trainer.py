@@ -17,10 +17,16 @@ DTYPE_MAP = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": to
 class EntropyTrainer:
     """
     Differentiable multiple-choice entropy loss with internal dataset loading.
-      - Call `num_batches(task, ...)`
-      - Call `batch_loss_by_index(..., task=..., batch_idx=..., batch_size=...)`
-    Uses `num_logits_to_keep` to cap the logits window to the needed choice length,
-    greatly reducing peak GPU memory without changing the loss.
+
+    Memory-sensitive execution:
+      - Base model parameters live on CPU.
+      - Only override tensors are moved to CUDA and used via functional_call.
+      - Model buffers (e.g., rotary inv_freq) are moved to CUDA for device alignment.
+      - Gradient checkpointing enabled; use_cache=False.
+      - functional_call wrapped in autocast (fp16/bf16).
+      - lm_head.weight is auto-aliased to model.embed_tokens.weight if needed.
+
+    You can control sequence length via `max_len` (default=512 to keep peaks down).
     """
 
     def __init__(self, *, device: str = "cuda", dtype: str = "float16"):
@@ -41,43 +47,97 @@ class EntropyTrainer:
             d.get("vocab_size"),
         )
 
+    def _move_only_buffers_to_device(self, module: torch.nn.Module, device: str):
+        # Move buffers to target device without moving parameters.
+        for submod in module.modules():
+            for name, buf in list(submod._buffers.items()):
+                if buf is not None and hasattr(buf, "device"):
+                    if buf.device.type != device:
+                        try:
+                            submod._buffers[name] = buf.to(device)
+                        except Exception:
+                            # Some buffers may be non-floating types; try a generic move
+                            submod._buffers[name] = torch.as_tensor(buf, device=device)
+
     def _ensure_model(self, arch_info, tokenizer):
         sig = self._arch_signature(arch_info)
         if self.model is not None and sig == self._arch_sig:
-            # ensure pad token for batching
             if tokenizer.pad_token_id is None:
                 tokenizer.pad_token = tokenizer.eos_token
             return
 
+        # 1) Build model on CPU so params do NOT occupy CUDA memory.
         self.model = AutoModelForCausalLM.from_config(
             arch_info, trust_remote_code=True, torch_dtype=self.dtype
-        ).to(self.device)
+        ).to("cpu")
+
         self.model.eval()
         self.model.config.use_cache = False
+
+        # 2) Disable grads on base params (we only want grads through overrides).
         for p in self.model.parameters():
             p.requires_grad_(False)
+
+        # 3) Enable gradient checkpointing if available (reduces activation memory).
+        try:
+            # Transformers will respect this even with functional_call
+            self.model.gradient_checkpointing_enable()
+        except Exception:
+            pass
+
+        # 4) Ensure tokenizer has pad token for batching.
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
+
+        # 5) Move buffers (NOT parameters) to CUDA so device types align at forward.
+        if self.device.startswith("cuda"):
+            self._move_only_buffers_to_device(self.model, self.device)
+
         self._arch_sig = sig
 
     def _prepare_param_overrides(self, out_tensors: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """Map merged tensors -> model param names; move to device/dtype (keeps graph)."""
         overrides = {}
         name_to_param = dict(self.model.named_parameters())
+
+        # Standard mapping (your out_tensors already use HF param names like "model.layers.X....")
         for name, v in out_tensors.items():
             if "rotary_emb.inv_freq" in name:
                 continue
             target = name
-            # tie lm_head to embed_tokens if needed
+            # If we don't find lm_head in the model but it's in overrides, try to tie to embed tokens.
             if target not in name_to_param and name == "lm_head.weight":
                 if "model.embed_tokens.weight" in name_to_param:
                     target = "model.embed_tokens.weight"
                 else:
+                    # If the model truly has no lm_head and no shared embedding, skip.
                     continue
+
             p = name_to_param.get(target)
             if p is None:
+                # Not a used param in this architecture
                 continue
-            overrides[target] = v.to(device=p.device, dtype=p.dtype)
+
+            # Move override tensor to the param's expected dtype/device.
+            dev = self.device if self.device.startswith("cuda") else p.device
+            dt = p.dtype
+            overrides[target] = v.to(device=dev, dtype=dt)
+
+        # If model *does* have an lm_head and we built embed override but not lm_head, alias it.
+        if "lm_head.weight" in name_to_param and "lm_head.weight" not in overrides:
+            if "model.embed_tokens.weight" in overrides:
+                overrides["lm_head.weight"] = overrides["model.embed_tokens.weight"]
+
+        # Helpful coverage log (doesn't raise; meta/CPU base params won't cost VRAM)
+        covered = set(overrides.keys())
+        total = set(name_to_param.keys())
+        missing = sorted(list(total - covered))
+        logger.info(f"[coverage] override {len(covered)}/{len(total)} params")
+        if missing:
+            head = "\n    " + "\n    ".join(missing[:10])
+            tail = "" if len(missing) <= 10 else f"\n    ... (+{len(missing)-10} more)"
+            logger.info(f"[coverage] MISSING params:{head}{tail}")
+
         return overrides
 
     # ---------- dataset helpers ----------
@@ -241,30 +301,27 @@ class EntropyTrainer:
         maxL = max(int(x.numel()) for x in seqs)
         batch_ids = torch.full((len(seqs), maxL), pad_id, dtype=torch.long, device=device)
         attn_mask = torch.zeros_like(batch_ids)
-        lengths = []
         for j, ids in enumerate(seqs):
             L = int(ids.numel())
             batch_ids[j, :L] = ids.to(device)
             attn_mask[j, :L] = 1
-            lengths.append(L)
 
         # Memory saver: only keep logits for the last K steps.
-        # K must cover the scored choice tokens (+1 for AR shift).
         K = max(1, max(kept_choice_lens) + 1)
 
-        # Some models don't accept num_logits_to_keep; fall back if needed.
-        try:
-            out = model_callable(input_ids=batch_ids, attention_mask=attn_mask, num_logits_to_keep=K)
-        except TypeError:
-            out = model_callable(input_ids=batch_ids, attention_mask=attn_mask)
+        # Run under autocast to keep activations in self.dtype
+        with torch.autocast(device_type="cuda", dtype=self.dtype, enabled=device.startswith("cuda")):
+            try:
+                out = model_callable(input_ids=batch_ids, attention_mask=attn_mask, num_logits_to_keep=K)
+            except TypeError:
+                out = model_callable(input_ids=batch_ids, attention_mask=attn_mask)
 
         # Align logits/targets with standard next-token shift, but only in the kept window
         raw_logits = out.logits  # [B, K, V] if num_logits_to_keep worked, else [B, T, V]
-        if raw_logits.size(1) > 0 and raw_logits.size(1) <= K:  # trimmed case (or small T)
+        if raw_logits.size(1) > 0 and raw_logits.size(1) <= K:
             logits = raw_logits[:, :-1, :]                       # [B, K-1, V]
             targets = batch_ids[:, -logits.size(1):]             # last K-1 tokens as labels
         else:
-            # Fallback to full sequence behavior
             logits = raw_logits[:, :-1, :]
             targets = batch_ids[:, 1:]
 
@@ -278,7 +335,7 @@ class EntropyTrainer:
             if kept_c <= 0 or T_kept <= 0 or kept_c > T_kept:
                 score = logits.new_tensor([-1e30])
             else:
-                row_logits  = logits[j, -kept_c:, :]      # last kept_c steps
+                row_logits  = logits[j, -kept_c:, :]
                 row_targets = targets[j, -kept_c:]
                 lp = F.log_softmax(row_logits, dim=-1)
                 tok_lp = lp.gather(-1, row_targets.unsqueeze(-1)).squeeze(-1)
@@ -292,23 +349,20 @@ class EntropyTrainer:
             C = scores.numel()
             probs = torch.softmax(scores, dim=-1)
             ent = -(probs * probs.clamp_min(1e-20).log()).sum()
-            # if base == 2:
-            #     ent = ent / math.log(2)
-
             if C > 1:
                 ent = ent / math.log(C)
             entropies.append(ent)
         loss = torch.stack(entropies).mean()
 
-        # Drop local refs before returning (graph is kept via `loss`)
+        # Cleanup local refs (graph is kept via `loss`)
         try:
-            del seqs, kept_choice_lens, owners, batch_ids, attn_mask, logits, targets, per_sample_scores, entropies
+            del seqs, kept_choice_lens, owners, batch_ids, attn_mask, logits, targets, per_sample_scores, entropies, out
         except Exception:
             pass
 
         return loss
 
-    # ---------- public API with internal loading ----------
+    # ---------- public API ----------
     def batch_loss_by_index(
         self,
         *,
@@ -318,13 +372,13 @@ class EntropyTrainer:
         task: str,
         batch_idx: int,
         batch_size: int,
-        max_len: int = 2048,
-        length_norm: bool = True,
+        max_len: int = 512,          # lowered default to keep memory down
+        length_norm: bool = False,
         base=math.e,
         limit: int = 100,
         split: str = "validation",
         seed: int = 42,
-        subjects="auto",  # only used for MMLU
+        subjects="auto",
     ) -> torch.Tensor:
         """
         Load/cache the dataset internally, slice the requested batch, and compute loss.
@@ -342,7 +396,7 @@ class EntropyTrainer:
         batch = data[start:end]
 
         def _model_with_overrides(**kwargs):
-            # functional_call keeps autograd path from overrides -> loss
+            # Keep autograd path from overrides -> loss
             return functional_call(self.model, overrides, args=(), kwargs={**kwargs, "use_cache": False})
 
         loss = self._entropy_batch_loss(

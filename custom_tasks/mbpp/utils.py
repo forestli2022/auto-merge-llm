@@ -1,6 +1,6 @@
 import os
 os.environ["HF_ALLOW_CODE_EVAL"] = "1"
-import evaluate as hf_evaluate
+import evaluate_model as hf_evaluate
 
 import os
 import pandas as pd

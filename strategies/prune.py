@@ -4,6 +4,7 @@ import os
 import random
 import traceback
 from pathlib import Path
+import subprocess
 
 import numpy as np
 import torch
@@ -71,6 +72,8 @@ class PruneMoMerge(MergeStrategy):
         self.max_layers = self.config.get("layers", 40)
         self.remove_layers = self.num_hidden_layers - self.max_layers
         self.evaluate_tasks = [task['task'] for task in self.config.get('evaluation', {}).get('tasks', [])]
+        self.vllm = self.config.get("vllm", False)
+        self.cache_dir = self.config.get("cache_dir")
         
         # Optimization parameters
         self.n_workers = config.get("n_workers", 1)
@@ -709,6 +712,41 @@ class PruneMoMerge(MergeStrategy):
         
     def merge(self):
         study = self.optimize()
-        
+
+    def evaluate(self, weight_path, output_path=None):
+        logger.info(f"start evaluating, weight path is : {weight_path}")
+
+        # Merge model then save it
+        config = json.load(open(weight_path))
+        slices, output_scales = self.generate_genotype(config)
+
+        # Merge model
+        if output_path is None:
+            output_path = self.output_path
+        result_path = os.path.join(output_path, "result")
+        model_path = os.path.join(result_path, "final_merged_model")
+        eval_path = os.path.join(result_path, "opencompass_workdir")
+        data_cache = os.path.join(self.cache_dir, "opencompass_datasets")
+        os.makedirs(model_path, exist_ok=True)
+        merge_utils = MergeUtils(
+            base_model=self.base_model,
+            merging_models=None,
+            merging_method=None,
+            slices=slices,
+            model_storage_path=model_path,
+            in_memory=False,
+            output_scales=output_scales
+        )
+        merge_utils.merge_slices()
+
+        env = os.environ.copy()
+        env["OC_MODEL_DIR"] = model_path
+        env["OPENCOMPASS_DATA"] = data_cache
+
+        subprocess.run(
+            ["opencompass", "utils/eval_config.py", "--work-dir", eval_path],
+            check=True, env=env
+        )
+
 if __name__ == "__main__":
     pass

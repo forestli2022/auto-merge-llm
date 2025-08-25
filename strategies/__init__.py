@@ -11,6 +11,7 @@ from .fold_different_params import FoldDifferentParams
 from .fold_adamerging import FoldAdamerging
 from .merge_utils import MergeUtils
 from .prune_continuous import PruneContinuous
+from .fold_gmm_cluster import FoldGMMCluster
 
 strategy_classes = {
     'normal_models': NormalModelsMerge,
@@ -24,5 +25,6 @@ strategy_classes = {
     'fold_different_params': FoldDifferentParams,
     'fold_adamerging': FoldAdamerging,
     'prune_continuous': PruneContinuous,
-    'fold_gmm': FoldGMM
+    'fold_gmm': FoldGMM,
+    'fold_gmm_cluster': FoldGMMCluster
 }

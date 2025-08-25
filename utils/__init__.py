@@ -13,5 +13,6 @@ __all__ = [
     'get_param_names_to_merge',
     'align_tokenizers_and_embeddings',
     'TaskVector',
-    'load_and_validate_config'
+    'load_and_validate_config',
+    'run_opencompass'
 ]

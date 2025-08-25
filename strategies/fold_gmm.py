@@ -16,6 +16,7 @@ from transformers import AutoConfig, AutoTokenizer
 
 # Local application imports
 from evaluation import evaluator_classes
+from evaluation.accuracy_trainer import AccuracyTrainer
 from evaluation.entropy_trainer import EntropyTrainer
 from loader.tensor_loader import TensorLoader
 from loader.tensor_writer import TensorWriter
@@ -144,7 +145,6 @@ class FoldGMM(MergeStrategy):
 
         # Optimization parameters
         self.n_trials = int(config.get("n_trials"))
-        self.reg_warmup_steps = int(config.get("reg_warmup_steps", 300))
         self.seed = int(config.get("seed", 0))
 
         # Merging configuration
@@ -300,6 +300,7 @@ class FoldGMM(MergeStrategy):
 
         optimizer = torch.optim.Adam(self.merging_weights.parameters(), lr=1e-3)
         ev = EntropyTrainer(device="cuda" if torch.cuda.is_available() else "cpu", dtype=self.dtype)
+        # ev = AccuracyTrainer(device="cuda" if torch.cuda.is_available() else "cpu", dtype=self.dtype)
 
         start_epoch = self._load_checkpoint_if_available(optimizer)
 
@@ -326,7 +327,7 @@ class FoldGMM(MergeStrategy):
 
                     continuous_merger.build_merged_model()
 
-                    entropy = ev.batch_loss_by_index(
+                    loss = ev.batch_loss_by_index(
                         out_tensors=continuous_merger.out_tensors,
                         arch_info=continuous_merger.output_config,
                         tokenizer=continuous_merger.aligned_tokenizer,
@@ -338,8 +339,6 @@ class FoldGMM(MergeStrategy):
                         seed=self.seed,
                     )
 
-                    reg_weight = self._linear_ramp(epoch)
-                    loss = entropy  # (add regularizers later if desired)
                     logger.info(f"Epoch {epoch}, Task {task}, Batch {batch+1}/{num_batches}, Loss: {loss.item()}")
 
                     loss.backward()
@@ -352,9 +351,6 @@ class FoldGMM(MergeStrategy):
 
         logger.info("Finished merging/pruning")
         self.evaluate()
-
-    def _linear_ramp(self, epoch):
-        return min(1.0, epoch / max(1, self.reg_warmup_steps))
 
     def evaluate(self):
         logger.info(f"Starting evaluation")
