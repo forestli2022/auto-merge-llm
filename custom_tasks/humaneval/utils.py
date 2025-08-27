@@ -1,7 +1,7 @@
 import os
 os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 
-import evaluate_model as hf_evaluate
+import save_model as hf_evaluate
 
 
 pass_at_k = hf_evaluate.load("code_eval")

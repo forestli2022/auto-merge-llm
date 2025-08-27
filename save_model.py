@@ -16,7 +16,7 @@ def main(config, weight_path, output_path=None):
     selected_strategy = config.get('strategy')
 
     merge_strategy_instance = get_merge_strategy(selected_strategy, config)
-    merge_strategy_instance.evaluate(weight_path, output_path)
+    merge_strategy_instance.save_model(weight_path, output_path)
     
 
 if __name__ == "__main__":

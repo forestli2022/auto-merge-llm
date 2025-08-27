@@ -697,5 +697,30 @@ class FoldMerge(MergeStrategy):
     def merge(self):
         study = self.optimize()
 
+    def save_model(self, weight_path, output_path=None):
+        logger.info(f"start saving model, weight path is : {weight_path}")
+
+        # Merge model then save it
+        config = json.load(open(weight_path))
+        slices, output_scales = self.generate_genotype(config)
+
+        # Merge model
+        if output_path is None:
+            output_path = self.output_path
+        result_path = os.path.join(output_path, "result")
+        model_path = os.path.join(result_path, "final_merged_model")
+        eval_path = os.path.join(result_path, "opencompass_workdir")
+        data_cache = os.path.join(self.cache_dir, "opencompass_datasets")
+        os.makedirs(model_path, exist_ok=True)
+        merge_utils = MergeUtils(
+            base_model=self.base_model,
+            merging_models=None,
+            merging_method=None,
+            slices=slices,
+            model_storage_path=model_path,
+            in_memory=False,
+            output_scales=output_scales
+        )
+        merge_utils.merge_slices()
 if __name__ == "__main__":
     pass

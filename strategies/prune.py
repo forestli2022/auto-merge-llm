@@ -713,8 +713,8 @@ class PruneMoMerge(MergeStrategy):
     def merge(self):
         study = self.optimize()
 
-    def evaluate(self, weight_path, output_path=None):
-        logger.info(f"start evaluating, weight path is : {weight_path}")
+    def save_model(self, weight_path, output_path=None):
+        logger.info(f"start saving model, weight path is : {weight_path}")
 
         # Merge model then save it
         config = json.load(open(weight_path))
@@ -738,15 +738,6 @@ class PruneMoMerge(MergeStrategy):
             output_scales=output_scales
         )
         merge_utils.merge_slices()
-
-        env = os.environ.copy()
-        env["OC_MODEL_DIR"] = model_path
-        env["OPENCOMPASS_DATA"] = data_cache
-
-        subprocess.run(
-            ["opencompass", "utils/eval_config.py", "--work-dir", eval_path],
-            check=True, env=env
-        )
 
 if __name__ == "__main__":
     pass
